@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+
+# Env / secrets
+.env
+*.pem
+
+# Local-only agent context (never push)
+CLAUDE.md
+MEMORY.md
+SESSION-SUMMARY.md
+.claude/
+
+# Local databases
+*.db
+*.sqlite3
+
+# Node
+node_modules/
+dist/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log

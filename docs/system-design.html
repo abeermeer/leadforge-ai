@@ -1,0 +1,810 @@
+<title>Trax9 AI Lead Gen — System Design</title>
+
+<style>
+  :root {
+    --navy:    #1a2744;
+    --gold:    #f5a623;
+    --paper:   #f7f8fb;
+    --surface: #ffffff;
+    --ink:     #1f2430;
+    --muted:   #6b7280;
+    --line:    #e6e8ee;
+    --spine:   #d8dce6;
+
+    --kind-api:     #2563a8;
+    --kind-scrape:  #8a5a2b;
+    --kind-ai:      #6b4fa0;
+    --kind-data:    #2f7a5f;
+    --kind-send:    #b0472f;
+
+    --tint-api:     #eaf1f9;
+    --tint-scrape:  #f9f1e8;
+    --tint-ai:      #f2eef8;
+    --tint-data:    #e9f4ef;
+    --tint-send:    #fbeeea;
+
+    --mono: ui-monospace, "Cascadia Code", "SF Mono", Menlo, Consolas, monospace;
+    --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --navy:    #0d1424;
+      --gold:    #f7b64a;
+      --paper:   #10141f;
+      --surface: #171d2b;
+      --ink:     #e6e9f0;
+      --muted:   #949cb0;
+      --line:    #2a3145;
+      --spine:   #333b52;
+
+      --kind-api:     #7aaee8;
+      --kind-scrape:  #d9a06a;
+      --kind-ai:      #b096e0;
+      --kind-data:    #6cc39c;
+      --kind-send:    #e88a70;
+
+      --tint-api:     #182338;
+      --tint-scrape:  #2b2115;
+      --tint-ai:      #221c33;
+      --tint-data:    #13291f;
+      --tint-send:    #2c1a15;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --navy:    #0d1424;
+    --gold:    #f7b64a;
+    --paper:   #10141f;
+    --surface: #171d2b;
+    --ink:     #e6e9f0;
+    --muted:   #949cb0;
+    --line:    #2a3145;
+    --spine:   #333b52;
+    --kind-api:     #7aaee8;
+    --kind-scrape:  #d9a06a;
+    --kind-ai:      #b096e0;
+    --kind-data:    #6cc39c;
+    --kind-send:    #e88a70;
+    --tint-api:     #182338;
+    --tint-scrape:  #2b2115;
+    --tint-ai:      #221c33;
+    --tint-data:    #13291f;
+    --tint-send:    #2c1a15;
+  }
+
+  :root[data-theme="light"] {
+    --navy:    #1a2744;
+    --gold:    #f5a623;
+    --paper:   #f7f8fb;
+    --surface: #ffffff;
+    --ink:     #1f2430;
+    --muted:   #6b7280;
+    --line:    #e6e8ee;
+    --spine:   #d8dce6;
+    --kind-api:     #2563a8;
+    --kind-scrape:  #8a5a2b;
+    --kind-ai:      #6b4fa0;
+    --kind-data:    #2f7a5f;
+    --kind-send:    #b0472f;
+    --tint-api:     #eaf1f9;
+    --tint-scrape:  #f9f1e8;
+    --tint-ai:      #f2eef8;
+    --tint-data:    #e9f4ef;
+    --tint-send:    #fbeeea;
+  }
+
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--sans);
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap {
+    max-width: 1120px;
+    margin: 0 auto;
+    padding: 0 20px 72px;
+  }
+
+  /* ---------- masthead ---------- */
+  .masthead {
+    background: var(--navy);
+    color: #fff;
+    margin: 0 -20px 40px;
+    padding: 40px 20px 36px;
+    border-bottom: 3px solid var(--gold);
+  }
+  .masthead-inner { max-width: 1080px; margin: 0 auto; }
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--gold);
+    margin: 0 0 10px;
+  }
+  .masthead h1 {
+    font-size: clamp(26px, 4.2vw, 40px);
+    line-height: 1.1;
+    font-weight: 650;
+    letter-spacing: -0.02em;
+    text-wrap: balance;
+    margin: 0 0 14px;
+    color: #fff;
+  }
+  .masthead p {
+    margin: 0;
+    max-width: 62ch;
+    color: #b9c2d6;
+    font-size: 15px;
+  }
+  .meta-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 28px;
+    margin-top: 24px;
+    padding-top: 18px;
+    border-top: 1px solid rgba(255,255,255,0.14);
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: #8e99b3;
+  }
+  .meta-row b { color: #fff; font-weight: 500; }
+
+  /* ---------- legend ---------- */
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 40px;
+  }
+  .chip {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    padding: 4px 9px;
+    border-radius: 3px;
+    border: 1px solid currentColor;
+    white-space: nowrap;
+  }
+  .k-api    { color: var(--kind-api);    background: var(--tint-api); }
+  .k-scrape { color: var(--kind-scrape); background: var(--tint-scrape); }
+  .k-ai     { color: var(--kind-ai);     background: var(--tint-ai); }
+  .k-data   { color: var(--kind-data);   background: var(--tint-data); }
+  .k-send   { color: var(--kind-send);   background: var(--tint-send); }
+
+  /* ---------- section heads ---------- */
+  .sec-head {
+    display: flex;
+    align-items: baseline;
+    gap: 14px;
+    margin: 0 0 20px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--line);
+  }
+  .sec-head h2 {
+    margin: 0;
+    font-size: 13px;
+    font-family: var(--mono);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    font-weight: 600;
+    color: var(--ink);
+  }
+  .sec-head span {
+    font-size: 12.5px;
+    color: var(--muted);
+  }
+
+  /* ---------- pipeline spine ---------- */
+  .pipeline {
+    position: relative;
+    padding-left: 56px;
+    margin-bottom: 56px;
+  }
+  .pipeline::before {
+    content: "";
+    position: absolute;
+    left: 19px;
+    top: 8px;
+    bottom: 8px;
+    width: 2px;
+    background: var(--spine);
+  }
+
+  .stage { position: relative; margin-bottom: 22px; }
+  .stage::before {
+    content: attr(data-n);
+    position: absolute;
+    left: -56px;
+    top: 0;
+    width: 40px;
+    height: 40px;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    background: var(--gold);
+    color: #1a2744;
+    font-family: var(--mono);
+    font-size: 13px;
+    font-weight: 700;
+    border: 3px solid var(--paper);
+  }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 18px 20px;
+  }
+  .card > h3 {
+    margin: 0 0 4px;
+    font-size: 16.5px;
+    font-weight: 640;
+    letter-spacing: -0.01em;
+    color: var(--ink);
+  }
+  .card > .sub {
+    margin: 0 0 14px;
+    font-size: 13.5px;
+    color: var(--muted);
+    max-width: 68ch;
+  }
+  .card > .sub:last-child { margin-bottom: 0; }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    gap: 10px;
+  }
+  .node {
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--nodec, var(--spine));
+    border-radius: 4px;
+    padding: 11px 13px;
+    background: var(--paper);
+  }
+  .node h4 {
+    margin: 0 0 6px;
+    font-size: 13px;
+    font-weight: 640;
+    color: var(--ink);
+  }
+  .node ul {
+    margin: 0;
+    padding-left: 15px;
+    font-size: 12.5px;
+    color: var(--muted);
+  }
+  .node li { margin: 2px 0; }
+  .node .chip { display: inline-block; margin-bottom: 7px; }
+
+  .n-api    { --nodec: var(--kind-api); }
+  .n-scrape { --nodec: var(--kind-scrape); }
+  .n-ai     { --nodec: var(--kind-ai); }
+  .n-data   { --nodec: var(--kind-data); }
+  .n-send   { --nodec: var(--kind-send); }
+
+  /* status pill for db state */
+  .pill {
+    font-family: var(--mono);
+    font-size: 11px;
+    padding: 2px 7px;
+    border-radius: 10px;
+    background: var(--tint-data);
+    color: var(--kind-data);
+    border: 1px solid currentColor;
+    white-space: nowrap;
+  }
+
+  .gate {
+    margin-top: 12px;
+    padding: 9px 12px;
+    background: var(--tint-scrape);
+    border-left: 3px solid var(--gold);
+    border-radius: 0 4px 4px 0;
+    font-size: 12.5px;
+    color: var(--ink);
+  }
+  .gate b { font-family: var(--mono); font-size: 11.5px; }
+
+  /* ---------- ordered flow inside a card ---------- */
+  .flow {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: stretch;
+    gap: 8px;
+  }
+  .flow .step {
+    flex: 1 1 150px;
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 10px 12px;
+    background: var(--paper);
+    font-size: 12.5px;
+  }
+  .flow .step b {
+    display: block;
+    font-size: 12.5px;
+    color: var(--ink);
+    margin-bottom: 3px;
+  }
+  .flow .step span { color: var(--muted); }
+
+  /* ---------- two-col rail ---------- */
+  .cols {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 18px;
+    margin-bottom: 56px;
+  }
+
+  .panel {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  .panel > header {
+    background: var(--navy);
+    color: #fff;
+    padding: 11px 16px;
+    font-family: var(--mono);
+    font-size: 11.5px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+  .panel > div { padding: 16px; }
+
+  .kv {
+    display: grid;
+    gap: 10px;
+    margin: 0;
+  }
+  .kv > div {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 3px;
+    padding-bottom: 10px;
+    border-bottom: 1px dashed var(--line);
+  }
+  .kv > div:last-child { border-bottom: 0; padding-bottom: 0; }
+  .kv dt {
+    font-size: 13px;
+    font-weight: 620;
+    color: var(--ink);
+  }
+  .kv dd {
+    margin: 0;
+    font-size: 12.5px;
+    color: var(--muted);
+  }
+
+  /* ---------- infra band ---------- */
+  .infra {
+    background: var(--navy);
+    margin: 0 -20px;
+    padding: 30px 20px;
+    border-top: 3px solid var(--gold);
+  }
+  .infra-inner { max-width: 1080px; margin: 0 auto; }
+  .infra h2 {
+    margin: 0 0 18px;
+    font-family: var(--mono);
+    font-size: 11.5px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--gold);
+    font-weight: 600;
+  }
+  .infra-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 12px;
+  }
+  .infra-item {
+    border: 1px solid rgba(255,255,255,0.16);
+    border-radius: 4px;
+    padding: 13px 15px;
+  }
+  .infra-item h4 {
+    margin: 0 0 5px;
+    font-size: 13px;
+    color: #fff;
+    font-weight: 620;
+  }
+  .infra-item p {
+    margin: 0;
+    font-size: 12px;
+    color: #9aa5bd;
+    font-family: var(--mono);
+  }
+
+  .foot {
+    margin-top: 22px;
+    padding-top: 16px;
+    border-top: 1px solid rgba(255,255,255,0.14);
+    font-size: 12px;
+    color: #8e99b3;
+    font-family: var(--mono);
+  }
+
+  @media (max-width: 640px) {
+    .pipeline { padding-left: 40px; }
+    .pipeline::before { left: 13px; }
+    .stage::before {
+      left: -40px; width: 28px; height: 28px; font-size: 11px; border-width: 2px;
+    }
+  }
+</style>
+
+<header class="masthead">
+  <div class="masthead-inner">
+    <p class="eyebrow">System Design — v2</p>
+    <h1>Trax9 AI Lead Generation &amp; Outreach</h1>
+    <p>An automated pipeline that reads the agency's own website to learn what it sells, finds businesses that match that profile, audits each one's site, ads and SEO, then writes and sends outreach that references what it actually found.</p>
+    <div class="meta-row">
+      <span><b>Stack</b> &nbsp;FastAPI · PostgreSQL · Celery/Redis · React</span>
+      <span><b>Pipeline</b> &nbsp;8 stages</span>
+      <span><b>Tenancy</b> &nbsp;Multi-user, per-user keys</span>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <div class="legend">
+    <span class="chip k-api">Hosted API</span>
+    <span class="chip k-scrape">Browser + proxy</span>
+    <span class="chip k-ai">AI model</span>
+    <span class="chip k-data">Database</span>
+    <span class="chip k-send">Email</span>
+  </div>
+
+  <div class="sec-head">
+    <h2>Pipeline</h2>
+    <span>A lead moves top to bottom. Each stage writes its result back before the next begins.</span>
+  </div>
+
+  <div class="pipeline">
+
+    <!-- 01 -->
+    <section class="stage" data-n="01">
+      <div class="card">
+        <h3>Agency Brain</h3>
+        <p class="sub">The operator pastes <b>trax9.com</b>. The system reads the site and works out what the agency sells and who it should be selling to — so every later stage is tuned to this agency, not a generic template.</p>
+        <div class="grid">
+          <div class="node n-scrape">
+            <span class="chip k-scrape">Browser</span>
+            <h4>Read own site</h4>
+            <ul><li>Home, services, about</li><li>Portfolio, pricing</li></ul>
+          </div>
+          <div class="node n-ai">
+            <span class="chip k-ai">AI</span>
+            <h4>Extract profile</h4>
+            <ul><li>Services offered</li><li>Ideal client + buying signals</li><li>Positioning</li></ul>
+          </div>
+          <div class="node n-data">
+            <span class="chip k-data">Saved</span>
+            <h4>Seed a campaign</h4>
+            <ul><li>Suggested keywords</li><li>Target locations</li></ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 02 -->
+    <section class="stage" data-n="02">
+      <div class="card">
+        <h3>Lead Discovery</h3>
+        <p class="sub">Three sources run in parallel, then results are merged and de-duplicated on the normalized domain.</p>
+        <div class="grid">
+          <div class="node n-api">
+            <span class="chip k-api">Places API</span>
+            <h4>Google Maps</h4>
+            <ul><li>Business + website + phone</li><li>Paged past 20 results</li></ul>
+          </div>
+          <div class="node n-api">
+            <span class="chip k-api">Custom Search</span>
+            <h4>Google Search</h4>
+            <ul><li>Query templates by keyword</li><li>Directories filtered out</li></ul>
+          </div>
+          <div class="node n-scrape">
+            <span class="chip k-scrape">Browser</span>
+            <h4>Directories</h4>
+            <ul><li>Yelp, YellowPages</li><li>Rotating proxy + user-agent</li></ul>
+          </div>
+        </div>
+        <div class="gate">Lands in the database as <span class="pill">discovered</span></div>
+      </div>
+    </section>
+
+    <!-- 03 -->
+    <section class="stage" data-n="03">
+      <div class="card">
+        <h3>Email Finder</h3>
+        <p class="sub">Discovery returns a website, not an inbox. This stage finds someone to write to, stopping at the first confident hit. Leads with no address are flagged for manual entry rather than dropped.</p>
+        <div class="flow">
+          <div class="step"><b>1 · Scrape the site</b><span>Contact and about pages, mailto links. Highest confidence.</span></div>
+          <div class="step"><b>2 · Pattern guess</b><span>Built from a named person. Marked low confidence.</span></div>
+          <div class="step"><b>3 · Hunter.io</b><span>Optional, only if the operator supplies a key.</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 04 -->
+    <section class="stage" data-n="04">
+      <div class="card">
+        <h3>Audit Engine</h3>
+        <p class="sub">Five checks per lead. A domain audited in the last seven days is reused from cache instead of re-fetched. If one check fails the rest still save — a partial audit is still useful.</p>
+        <div class="grid">
+          <div class="node n-scrape">
+            <span class="chip k-scrape">Fetch</span>
+            <h4>Website</h4>
+            <ul><li>Tech stack, page quality</li><li>Speed, mobile, SSL</li></ul>
+          </div>
+          <div class="node n-api">
+            <span class="chip k-api">PageSpeed API</span>
+            <h4>SEO</h4>
+            <ul><li>Core Web Vitals</li><li>Meta, schema, alt text</li><li>Sitemap, robots</li></ul>
+          </div>
+          <div class="node n-scrape">
+            <span class="chip k-scrape">Browser</span>
+            <h4>Meta Ads Library</h4>
+            <ul><li>Active ads + creatives</li><li>Ad strategy read</li></ul>
+          </div>
+          <div class="node n-scrape">
+            <span class="chip k-scrape">Browser</span>
+            <h4>Google Ads Transparency</h4>
+            <ul><li>Are they advertising?</li><li>Formats + samples</li></ul>
+          </div>
+          <div class="node n-ai">
+            <span class="chip k-ai">AI</span>
+            <h4>Brand R&amp;D</h4>
+            <ul><li>Industry, audience</li><li>Strengths, weaknesses</li><li>Likely pain points</li></ul>
+          </div>
+          <div class="node n-data">
+            <span class="chip k-data">Cache</span>
+            <h4>Audit cache</h4>
+            <ul><li>Keyed by domain, 7 days</li><li>Shared across campaigns</li></ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 05 -->
+    <section class="stage" data-n="05">
+      <div class="card">
+        <h3>Lead Scoring</h3>
+        <p class="sub">Every audited lead gets a fit score from 0 to 100 against the agency's ideal client, with the reasons kept alongside it so the operator can see why.</p>
+        <div class="grid">
+          <div class="node n-data">
+            <h4>Scores higher</h4>
+            <ul><li>Weak site — they need the work</li><li>Already buying ads — budget exists</li><li>Industry matches the profile</li><li>Contactable</li></ul>
+          </div>
+          <div class="node n-data">
+            <h4>Scores lower</h4>
+            <ul><li>Site already excellent</li><li>Enterprise — unlikely to convert</li><li>No email found</li></ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 06 -->
+    <section class="stage" data-n="06">
+      <div class="card">
+        <h3>Social Enrichment</h3>
+        <p class="sub">Paid per lookup, so it runs only on leads worth the spend. Everything below the threshold skips straight to writing.</p>
+        <div class="gate">Runs only when <b>fit score ≥ 60</b>. No key configured means it is skipped silently — the lead still flows.</div>
+        <div class="grid" style="margin-top:12px">
+          <div class="node n-api">
+            <span class="chip k-api">SocialCrawl</span>
+            <h4>Reviews</h4>
+            <ul><li>Trustpilot, TripAdvisor</li><li>Rating + volume</li></ul>
+          </div>
+          <div class="node n-api">
+            <span class="chip k-api">SocialCrawl</span>
+            <h4>LinkedIn</h4>
+            <ul><li>Headcount, industry</li></ul>
+          </div>
+          <div class="node n-api">
+            <span class="chip k-api">SocialCrawl</span>
+            <h4>Primary social</h4>
+            <ul><li>Followers, engagement</li></ul>
+          </div>
+        </div>
+        <div class="gate" style="margin-top:12px">Re-scores with what it learned — a big audience on a weak site is a strong signal the first pass could not see.</div>
+      </div>
+    </section>
+
+    <!-- 07 -->
+    <section class="stage" data-n="07">
+      <div class="card">
+        <h3>AI Email Writer</h3>
+        <p class="sub">Picks the single agency service that best solves the lead's biggest gap and leads with it — a shop running ads onto a slow page hears about the page, not about SEO. Every email cites something the audit actually found.</p>
+        <div class="grid">
+          <div class="node n-ai">
+            <h4>Reads in</h4>
+            <ul><li>Agency services</li><li>Full audit + top gap</li><li>Social signals</li></ul>
+          </div>
+          <div class="node n-ai">
+            <h4>Writes out</h4>
+            <ul><li>Subject naming a real finding</li><li>Three to four paragraphs</li><li>Signed by a named consultant</li></ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 08 -->
+    <section class="stage" data-n="08">
+      <div class="card">
+        <h3>Send Pipeline</h3>
+        <p class="sub">Four gates before anything leaves. Any one of them can hold a message back.</p>
+        <div class="flow">
+          <div class="step"><b>Rate limits</b><span>Hourly and daily, counted in Redis so every worker agrees.</span></div>
+          <div class="step"><b>Warmup</b><span>Starts at 10 a day, climbs by 5 until it reaches the real cap.</span></div>
+          <div class="step"><b>Suppression</b><span>Unsubscribes, spam reports and hard bounces are never contacted again.</span></div>
+          <div class="step"><b>Quota</b><span>Monthly ceiling per account. Overrun pauses the campaign.</span></div>
+        </div>
+        <div class="gate">Then SendGrid sends it — with an unsubscribe link, a one-click unsubscribe header and a postal address in the footer, as the law requires.</div>
+      </div>
+    </section>
+
+  </div>
+
+  <!-- ---------- after send ---------- -->
+  <div class="sec-head">
+    <h2>After the send</h2>
+    <span>Everything that comes back changes what happens next.</span>
+  </div>
+
+  <div class="cols">
+    <div class="panel">
+      <header>Inbound signals</header>
+      <div>
+        <dl class="kv">
+          <div>
+            <dt>Opens and clicks</dt>
+            <dd>Recorded against the lead from SendGrid's event webhook, verified by signature and de-duplicated by event id.</dd>
+          </div>
+          <div>
+            <dt>Bounces and spam reports</dt>
+            <dd>Added to the suppression list automatically. That address is finished.</dd>
+          </div>
+          <div>
+            <dt>Replies</dt>
+            <dd>Detected by polling the inbox, or by inbound parse. Matched back to the original message.</dd>
+          </div>
+        </dl>
+      </div>
+    </div>
+
+    <div class="panel">
+      <header>Follow-up sequence</header>
+      <div>
+        <dl class="kv">
+          <div>
+            <dt>Day 3 — second insight</dt>
+            <dd>Not a bump. A different finding from the same audit.</dd>
+          </div>
+          <div>
+            <dt>Day 7 — close the loop</dt>
+            <dd>Short, final, no pressure.</dd>
+          </div>
+          <div>
+            <dt>Cancels on any reply</dt>
+            <dd>A reply, unsubscribe or bounce cancels every remaining step for that lead immediately. Nobody gets chased after answering.</dd>
+          </div>
+        </dl>
+      </div>
+    </div>
+  </div>
+
+  <!-- ---------- dashboard ---------- -->
+  <div class="sec-head">
+    <h2>Dashboard</h2>
+    <span>What the operator sees and controls.</span>
+  </div>
+
+  <div class="cols">
+    <div class="panel">
+      <header>Views</header>
+      <div>
+        <dl class="kv">
+          <div><dt>Overview</dt><dd>Leads found, audited, sent, replied — plus daily activity.</dd></div>
+          <div><dt>Campaigns</dt><dd>Create, run each stage, watch live progress.</dd></div>
+          <div><dt>Leads</dt><dd>Sorted by fit score. Filter by status, flag the ones missing an email.</dd></div>
+        </dl>
+      </div>
+    </div>
+    <div class="panel">
+      <header>Lead detail</header>
+      <div>
+        <dl class="kv">
+          <div><dt>Audit tabs</dt><dd>Website · SEO · Meta Ads · Google Ads · Brand · Social</dd></div>
+          <div><dt>Email preview</dt><dd>Editable before it goes. Regenerate on demand.</dd></div>
+          <div><dt>Sequence timeline</dt><dd>Where this lead sits across the first email and both follow-ups.</dd></div>
+        </dl>
+      </div>
+    </div>
+    <div class="panel">
+      <header>Settings</header>
+      <div>
+        <dl class="kv">
+          <div><dt>Keys</dt><dd>Each account supplies its own and they are encrypted at rest. Displayed masked, never in full.</dd></div>
+          <div><dt>Sending</dt><dd>Daily and hourly caps, send window, warmup, return address.</dd></div>
+          <div><dt>Spend</dt><dd>Emails, AI usage and paid lookups counted per month against the account's ceiling.</dd></div>
+        </dl>
+      </div>
+    </div>
+  </div>
+
+  <!-- ---------- cross-cutting ---------- -->
+  <div class="sec-head">
+    <h2>Applies to every stage</h2>
+    <span>These wrap the pipeline rather than sit inside it.</span>
+  </div>
+
+  <div class="cols">
+    <div class="panel">
+      <header>Access &amp; secrets</header>
+      <div>
+        <dl class="kv">
+          <div><dt>Accounts</dt><dd>Sign-in issues a token; every request is scoped to the account that made it. No query can reach another account's leads.</dd></div>
+          <div><dt>Encrypted keys</dt><dd>Third-party credentials are encrypted before storage and decrypted only in the moment they are used.</dd></div>
+        </dl>
+      </div>
+    </div>
+    <div class="panel">
+      <header>Staying unblocked</header>
+      <div>
+        <dl class="kv">
+          <div><dt>Rotation</dt><dd>Every browser run goes out through a rotating proxy and user-agent pool.</dd></div>
+          <div><dt>Backing off</dt><dd>Politeness delays per site; repeated blocks pause that source rather than hammer it.</dd></div>
+        </dl>
+      </div>
+    </div>
+    <div class="panel">
+      <header>Visibility</header>
+      <div>
+        <dl class="kv">
+          <div><dt>Progress</dt><dd>Long jobs report item by item, so a running campaign shows real progress and real failures.</dd></div>
+          <div><dt>Health</dt><dd>A health endpoint, structured logs and error reporting across the app and its workers.</dd></div>
+        </dl>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="infra">
+  <div class="infra-inner">
+    <h2>Infrastructure</h2>
+    <div class="infra-grid">
+      <div class="infra-item">
+        <h4>PostgreSQL</h4>
+        <p>SQLAlchemy · Alembic</p>
+      </div>
+      <div class="infra-item">
+        <h4>Redis</h4>
+        <p>Rate counters · Queue broker</p>
+      </div>
+      <div class="infra-item">
+        <h4>Celery workers</h4>
+        <p>5 queues · profile, discovery, email_find, audit, email</p>
+      </div>
+      <div class="infra-item">
+        <h4>Celery beat</h4>
+        <p>3 jobs · warmup, sequences, replies</p>
+      </div>
+      <div class="infra-item">
+        <h4>Docker Compose</h4>
+        <p>Railway · Fly.io · DigitalOcean</p>
+      </div>
+    </div>
+    <p class="foot">Sending runs on an authenticated subdomain with SPF, DKIM and DMARC — separate from the main corporate domain, so outreach volume can never affect normal business mail.</p>
+  </div>
+</div>

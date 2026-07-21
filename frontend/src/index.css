@@ -1,0 +1,142 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    color-scheme: light;
+  }
+
+  body {
+    @apply bg-trax9-bg text-trax9-text antialiased;
+    font-family: 'Open Sans', ui-sans-serif, system-ui, -apple-system, 'Segoe UI',
+      Roboto, sans-serif;
+  }
+
+  h1, h2, h3, .font-display {
+    font-family: 'Josefin Sans', 'Open Sans', ui-sans-serif, sans-serif;
+  }
+
+  :focus-visible {
+    outline: 2px solid theme('colors.trax9.cyan');
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  ::selection {
+    background: rgba(73, 20, 196, 0.16);
+    color: #2a2550;
+  }
+
+  /* Scrollbars — thin, light */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: #c9d0e6 transparent;
+  }
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #c9d0e6;
+    border-radius: 8px;
+    border: 2px solid #eef2fb;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #a9b3d4;
+  }
+}
+
+@layer components {
+  /* Card surface — white, soft shadow, hairline border. Matches trax9.com. */
+  .panel {
+    background: #ffffff;
+    @apply rounded-xl border border-trax9-border;
+    box-shadow:
+      0 1px 3px 0 rgba(42, 37, 80, 0.08),
+      0 1px 2px -1px rgba(42, 37, 80, 0.06);
+  }
+  /* Panel with a thin gold signal rail along the top edge */
+  .panel-railed {
+    position: relative;
+  }
+  .panel-railed::before {
+    content: '';
+    position: absolute;
+    top: -1px;
+    left: 14px;
+    right: 14px;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, rgba(255, 138, 0, 0.7), transparent);
+  }
+
+  /* Mono data readout — counts, timestamps, scores */
+  .mono-readout {
+    @apply font-mono tabular-nums tracking-tight;
+  }
+
+  /* Tiny uppercase section label */
+  .label-caps {
+    @apply text-[11px] font-semibold uppercase tracking-[0.14em] text-trax9-muted;
+  }
+
+  /* Primary CTA — Trax9 violet→blue gradient (site's signature) */
+  .btn-gold {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white transition-all hover:brightness-110 hover:shadow-glow-gold disabled:cursor-not-allowed disabled:opacity-50;
+    background-image: linear-gradient(135deg, #4914c4 0%, #007bff 100%);
+  }
+
+  /* Secondary — ghost bordered */
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg border border-trax9-border bg-white px-4 py-2 text-sm font-medium text-trax9-text transition-colors hover:border-trax9-gold/50 hover:text-trax9-gold disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  /* Danger ghost */
+  .btn-danger {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg border border-trax9-red/40 bg-white px-4 py-2 text-sm font-medium text-trax9-red transition-colors hover:bg-trax9-red/10 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  /* Standard input */
+  .input-dark {
+    @apply w-full rounded-lg border border-trax9-border bg-white px-3 py-2 text-sm text-trax9-text placeholder-trax9-muted/60 outline-none transition-colors focus:border-trax9-gold/60;
+  }
+
+  /* Animated ops-room backdrop: drifting grid + twin glows */
+  .glow-topleft {
+    position: relative;
+    background:
+      radial-gradient(680px 460px at 0% 0%, rgba(73, 20, 196, 0.05), transparent 60%),
+      radial-gradient(720px 520px at 100% 100%, rgba(0, 123, 255, 0.045), transparent 62%);
+  }
+  .glow-topleft::before {
+    content: '';
+    position: absolute;
+    inset: -20%;
+    pointer-events: none;
+    z-index: 0;
+    background-image:
+      linear-gradient(rgba(73, 20, 196, 0.04) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(73, 20, 196, 0.04) 1px, transparent 1px);
+    background-size: 52px 52px;
+    mask-image: radial-gradient(circle at 50% 40%, #000 0%, transparent 78%);
+    -webkit-mask-image: radial-gradient(circle at 50% 40%, #000 0%, transparent 78%);
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .glow-topleft::before {
+      animation: drift 24s ease-in-out infinite;
+    }
+  }
+  .glow-topleft > * {
+    position: relative;
+    z-index: 1;
+  }
+
+  /* Live agent status dot */
+  .live-dot {
+    @apply inline-block h-2 w-2 rounded-full bg-trax9-cyan;
+    box-shadow: 0 0 8px 1px rgba(5, 195, 222, 0.8);
+  }
+}
