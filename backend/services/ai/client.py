@@ -22,11 +22,21 @@ AI_TIMEOUT_SECONDS = 60.0
 ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
 ANTHROPIC_VERSION = "2023-06-01"
 OPENAI_URL = "https://api.openai.com/v1/chat/completions"
+# Google Gemini's OpenAI-compatible endpoint — free tier, no card required.
+# Selected automatically when an "openai" key looks like a Google key (AIza...).
+GEMINI_OPENAI_URL = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
+GEMINI_DEFAULT_MODEL = "gemini-flash-latest"
 
 DEFAULT_MODELS = {
     "anthropic": "claude-haiku-4-5-20251001",
     "openai": "gpt-4o-mini",
 }
+
+
+def _is_gemini_key(api_key: str) -> bool:
+    """Google API keys are 'AIza...' (classic) or 'AQ....' (new AI Studio format);
+    OpenAI keys are 'sk-...'."""
+    return api_key.startswith("AIza") or api_key.startswith("AQ.")
 
 
 async def ai_completion(
@@ -37,7 +47,7 @@ async def ai_completion(
     api_key: str,
     model: str | None = None,
     temperature: float = 0.7,
-    max_tokens: int = 2000,
+    max_tokens: int = 8000,
 ) -> tuple[str, int]:
     """Run a single completion against the given provider.
 
@@ -63,7 +73,10 @@ async def ai_completion(
         if system:
             payload["system"] = system
         url = ANTHROPIC_URL
-    else:  # openai
+    else:  # openai (or Gemini via its OpenAI-compatible endpoint)
+        gemini = _is_gemini_key(api_key)
+        if gemini and model is None:
+            resolved_model = GEMINI_DEFAULT_MODEL
         headers = {"Authorization": f"Bearer {api_key}"}
         messages: list[dict] = []
         if system:
@@ -75,7 +88,7 @@ async def ai_completion(
             "temperature": temperature,
             "messages": messages,
         }
-        url = OPENAI_URL
+        url = GEMINI_OPENAI_URL if gemini else OPENAI_URL
 
     async with httpx.AsyncClient(timeout=AI_TIMEOUT_SECONDS) as client:
         response = await client.post(url, headers=headers, json=payload)
@@ -115,7 +128,7 @@ async def ai_json(
     provider: str = "anthropic",
     api_key: str,
     model: str | None = None,
-    max_tokens: int = 2000,
+    max_tokens: int = 8000,
 ) -> tuple[dict, int]:
     """Completion that must return a JSON object.
 

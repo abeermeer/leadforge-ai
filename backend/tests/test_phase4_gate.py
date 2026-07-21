@@ -78,7 +78,9 @@ def test_send_tracks_and_schedules_followups():
     client.put("/api/settings", headers=auth,
                json={"keys": {"sendgrid": "SG.fake", "anthropic": "sk-ant-x"},
                      "from_email": "ayesha@trax9.com", "from_name": "Ayesha",
-                     "physical_address": "1 Main St, Houston TX"})
+                     "physical_address": "1 Main St, Houston TX",
+                     # widen send window: test must pass at any UTC hour
+                     "send_start_hour": 0, "send_end_hour": 23})
     lid, lead_email = _seed_lead(EMAIL)
 
     r = client.post(f"/api/leads/{lid}/send", headers=auth)
