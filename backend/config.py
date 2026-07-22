@@ -32,6 +32,14 @@ class Settings(BaseSettings):
 
     # Scraping
     PROXY_POOL: str = ""  # comma-separated proxy URLs; empty = direct
+    # Run the scraper browser HEADFUL (visible window).
+    SCRAPER_HEADFUL: bool = False
+    # Path to a Playwright storage-state JSON (logged-in cookies). Meta's Ads
+    # Library and Google's Transparency Center now require an authenticated
+    # session to render ads — create this once with `python capture_session.py`
+    # and point this at the saved file. Empty = anonymous (ad libraries return
+    # empty results; website/SEO/brand audits are unaffected).
+    SCRAPER_STORAGE_STATE: str = ""
 
     # Sending defaults (per-user overrides in user_settings)
     DEFAULT_MAX_EMAILS_PER_DAY: int = 100

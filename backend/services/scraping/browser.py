@@ -10,12 +10,37 @@ The playwright import is deliberately lazy (inside get_page) so this module
 imports cleanly on machines without playwright installed.
 """
 import asyncio
+import os
 import random
 import time
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
 
+from config import settings
 from services.scraping.proxies import get_proxy, get_user_agent
+
+# Stealth args + init script so ad libraries don't detect an automated browser.
+_STEALTH_ARGS = [
+    "--disable-blink-features=AutomationControlled",
+    "--no-sandbox",
+    "--disable-dev-shm-usage",
+]
+_STEALTH_INIT_JS = """
+Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
+Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
+window.chrome = { runtime: {} };
+"""
+
+# Common cookie/consent buttons to dismiss so content actually renders.
+_CONSENT_SELECTORS = [
+    'div[aria-label="Allow all cookies"]',
+    'button[title="Allow all cookies"]',
+    'button:has-text("Allow all cookies")',
+    'button:has-text("Accept all")',
+    'button:has-text("Accept All")',
+    'button:has-text("I Accept")',
+]
 
 # --------------------------------------------------------------------------- politeness
 
@@ -54,15 +79,30 @@ async def get_page(viewport: tuple[int, int] = (1920, 1080)) -> AsyncIterator:
     browser = None
     context = None
     try:
-        launch_kwargs: dict = {"headless": True}
+        launch_kwargs: dict = {
+            "headless": not settings.SCRAPER_HEADFUL,
+            "args": _STEALTH_ARGS,
+        }
         proxy = get_proxy()
         if proxy:
             launch_kwargs["proxy"] = {"server": proxy}
         browser = await playwright.chromium.launch(**launch_kwargs)
-        context = await browser.new_context(
-            user_agent=get_user_agent(),
-            viewport={"width": viewport[0], "height": viewport[1]},
-        )
+        context_kwargs: dict = {
+            "user_agent": get_user_agent(),
+            "viewport": {"width": viewport[0], "height": viewport[1]},
+            "locale": "en-US",
+            "timezone_id": "Asia/Karachi",
+            "extra_http_headers": {
+                "Accept-Language": "en-US,en;q=0.9",
+                "Sec-Ch-Ua": '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
+            },
+        }
+        # Reuse a logged-in session (cookies) so authenticated pages — Meta Ads
+        # Library, Google Ads Transparency — render their content.
+        if settings.SCRAPER_STORAGE_STATE and os.path.exists(settings.SCRAPER_STORAGE_STATE):
+            context_kwargs["storage_state"] = settings.SCRAPER_STORAGE_STATE
+        context = await browser.new_context(**context_kwargs)
+        await context.add_init_script(_STEALTH_INIT_JS)
         page = await context.new_page()
         yield page
     finally:
@@ -71,6 +111,19 @@ async def get_page(viewport: tuple[int, int] = (1920, 1080)) -> AsyncIterator:
         if browser is not None:
             await browser.close()
         await playwright.stop()
+
+
+async def dismiss_consent(page) -> None:
+    """Best-effort click of a cookie/consent 'Allow all' button. Never raises."""
+    for selector in _CONSENT_SELECTORS:
+        try:
+            button = await page.query_selector(selector)
+            if button:
+                await button.click(timeout=2000)
+                await page.wait_for_timeout(600)
+                return
+        except Exception:
+            continue
 
 
 async def polite_delay(domain: str) -> None:

@@ -43,3 +43,7 @@ testing.mp4
 
 # Local-only account bootstrap (holds a password)
 backend/setup_account.py
+
+# Scraper login session (holds cookies)
+backend/scraper_session.json
+scraper_session.json

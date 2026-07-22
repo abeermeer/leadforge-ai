@@ -24,6 +24,7 @@ from urllib.parse import quote_plus
 
 from services.discovery import normalize_domain
 from services.scraping.browser import (
+    dismiss_consent,
     get_page,
     is_paused,
     polite_delay,
@@ -328,6 +329,7 @@ async def _run_search(page: "Page", url: str, company_name: str) -> dict:
     response = await page.goto(url, wait_until="domcontentloaded", timeout=_NAV_TIMEOUT_MS)
     if response is not None and response.status in (403, 429):
         raise RuntimeError(f"blocked by facebook with HTTP {response.status}")
+    await dismiss_consent(page)  # clear the cookie wall so results render
     await page.wait_for_function(_RESULTS_READY_JS, timeout=_WAIT_TIMEOUT_MS)
 
     body_text = await page.inner_text("body")

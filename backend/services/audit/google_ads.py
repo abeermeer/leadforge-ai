@@ -26,6 +26,7 @@ from urllib.parse import quote_plus
 
 from services.discovery import normalize_domain
 from services.scraping.browser import (
+    dismiss_consent,
     get_page,
     is_paused,
     polite_delay,
@@ -240,6 +241,7 @@ async def _run_search(page: "Page", url: str) -> dict:
     response = await page.goto(url, wait_until="domcontentloaded", timeout=_NAV_TIMEOUT_MS)
     if response is not None and response.status in (403, 429):
         raise RuntimeError(f"blocked by google with HTTP {response.status}")
+    await dismiss_consent(page)  # clear Google's consent wall
     await page.wait_for_function(_SEARCH_READY_JS, timeout=_WAIT_TIMEOUT_MS)
 
     # The query URL may only surface advertiser suggestions; open the first
