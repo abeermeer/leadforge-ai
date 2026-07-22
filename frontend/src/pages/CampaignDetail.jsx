@@ -4,6 +4,7 @@ import {
   ArrowLeft,
   Radar,
   ScanSearch,
+  PenLine,
   Loader2,
   Search,
   ArrowUpDown,
@@ -193,6 +194,7 @@ export default function CampaignDetail() {
 
   const discoverBusy = actionBusy === 'discover' || typeBusy('discover');
   const auditBusy = actionBusy === 'audit' || typeBusy('audit');
+  const writeBusy = actionBusy === 'write' || typeBusy('write');
 
   const rows = useMemo(() => {
     const items = [...table.items];
@@ -339,6 +341,20 @@ export default function CampaignDetail() {
               <ScanSearch size={16} />
             )}
             {auditBusy ? 'Audit Running…' : 'Launch Audit'}
+          </button>
+          <button
+            type="button"
+            className="btn-gold"
+            onClick={() => trigger('write')}
+            disabled={writeBusy}
+            title="Draft outreach emails for every scored lead"
+          >
+            {writeBusy ? (
+              <Loader2 size={16} className="motion-safe:animate-spin" />
+            ) : (
+              <PenLine size={16} />
+            )}
+            {writeBusy ? 'Writing…' : 'Write Emails'}
           </button>
           <span className="mono-readout ml-auto text-xs text-trax9-muted">
             {allLeads.length > 0

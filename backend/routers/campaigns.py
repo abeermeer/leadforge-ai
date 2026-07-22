@@ -367,6 +367,89 @@ def audit_campaign_endpoint(
     }
 
 
+# ------------------------------------------------------------------ write
+
+
+@router.post("/campaigns/{campaign_id}/write")
+def write_campaign_endpoint(
+    campaign_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    keys: dict = Depends(get_decrypted_keys),
+    settings_row: UserSettings = Depends(get_user_settings),
+    db: Session = Depends(get_db),
+):
+    """Generate outreach email copy for every scored/enriched lead (no send).
+
+    Runs inline with the user's AI key — this is the WRITE stage of the pipeline.
+    """
+    import asyncio
+
+    from services.ai.client import record_ai_usage
+    from services.email.writer import generate_email
+
+    campaign = _get_campaign(db, user, campaign_id)
+    provider = (
+        settings_row.ai_provider.value
+        if hasattr(settings_row.ai_provider, "value")
+        else settings_row.ai_provider
+    )
+    ai_key = keys.get(provider)
+    if not ai_key:
+        raise HTTPException(status_code=400, detail="Configure your AI API key in Settings first")
+
+    profile = (
+        db.query(AgencyProfile)
+        .filter(AgencyProfile.user_id == user.id)
+        .order_by(AgencyProfile.updated_at.desc())
+        .first()
+    )
+    agency_services = (profile.services if profile else None) or []
+
+    leads = (
+        db.query(Lead)
+        .filter(
+            Lead.campaign_id == campaign.id,
+            Lead.status.in_([LeadStatus.scored, LeadStatus.enriched, LeadStatus.audited]),
+        )
+        .all()
+    )
+    if not leads:
+        return {"detail": "No scored leads to write for yet — run Audit first", "written": 0}
+
+    task_row = Task(
+        user_id=user.id, campaign_id=campaign.id, type=TaskType.write,
+        status=TaskStatus.running, total_items=len(leads),
+    )
+    db.add(task_row)
+    db.commit()
+
+    written = 0
+    for lead in leads:
+        try:
+            email, tokens = asyncio.run(
+                generate_email(
+                    {"company_name": lead.company_name, "website": lead.website},
+                    lead.audit_data or {},
+                    agency_services,
+                    provider=provider,
+                    api_key=ai_key,
+                )
+            )
+            lead.email_subject = email["subject"]
+            lead.email_body = email["body"]
+            lead.status = LeadStatus.written
+            record_ai_usage(db, user.id, tokens)
+            written += 1
+        except Exception:
+            logger.exception("write failed for lead %s", lead.id)
+        task_row.completed_items = (task_row.completed_items or 0) + 1
+        db.commit()
+
+    task_row.status = TaskStatus.completed
+    db.commit()
+    return {"detail": "Emails written", "written": written, "total": len(leads)}
+
+
 # ------------------------------------------------------------------ send + export
 
 
