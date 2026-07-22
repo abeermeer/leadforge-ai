@@ -31,6 +31,7 @@ import api from '../api/client';
 import StatusBadge from '../components/StatusBadge';
 import ScoreBadge from '../components/ScoreBadge';
 import EmptyState from '../components/EmptyState';
+import { toDate } from '../utils/datetime';
 
 /* ── helpers ─────────────────────────────────────────────────── */
 
@@ -47,7 +48,7 @@ const isEmptyObj = (o) => !o || typeof o !== 'object' || Object.keys(o).length =
 
 function fmtDate(iso, pattern = 'MMM d, HH:mm') {
   if (!iso) return null;
-  const d = new Date(iso);
+  const d = toDate(iso);
   return Number.isNaN(d.getTime()) ? null : format(d, pattern);
 }
 

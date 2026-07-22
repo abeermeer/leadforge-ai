@@ -1,5 +1,6 @@
 import { format } from 'date-fns';
 import { Activity } from 'lucide-react';
+import { toDate } from '../utils/datetime';
 
 /**
  * "Agent Activity" feed panel — reverse-chron mono readout of task rows:
@@ -22,12 +23,12 @@ const STATUS_CLS = {
 
 function stamp(value) {
   if (!value) return '--:--:--';
-  const d = new Date(value);
+  const d = toDate(value);
   return Number.isNaN(d.getTime()) ? '--:--:--' : format(d, 'HH:mm:ss');
 }
 
 function taskTime(t) {
-  const d = new Date(t.updated_at || t.created_at || 0);
+  const d = toDate(t.updated_at || t.created_at) || new Date(0);
   return Number.isNaN(d.getTime()) ? 0 : d.getTime();
 }
 

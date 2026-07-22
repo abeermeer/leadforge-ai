@@ -9,6 +9,7 @@ import {
   PenLine,
   Send,
 } from 'lucide-react';
+import { toDate } from '../utils/datetime';
 
 /**
  * THE PIPELINE — a living rail of AI agents.
@@ -51,7 +52,7 @@ function stageForTaskType(type) {
 }
 
 function taskTime(t) {
-  const d = new Date(t.updated_at || t.created_at || 0);
+  const d = toDate(t.updated_at || t.created_at) || new Date(0);
   return Number.isNaN(d.getTime()) ? 0 : d.getTime();
 }
 

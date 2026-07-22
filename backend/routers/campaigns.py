@@ -215,6 +215,10 @@ def discover_campaign(
             detail="Campaign needs seed keywords and target locations before discovery",
         )
 
+    # First agent deployed — campaign is now live, not a draft.
+    campaign.status = CampaignStatus.running
+    db.commit()
+
     discovery_keys = {
         "google_places": keys.get("google_places"),
         "google_custom_search": keys.get("google_custom_search"),
@@ -327,6 +331,10 @@ def audit_campaign_endpoint(
         raise HTTPException(
             status_code=400, detail="Configure your AI API key in Settings first"
         )
+
+    if campaign.status == CampaignStatus.draft:
+        campaign.status = CampaignStatus.running
+        db.commit()
 
     try:
         audit_campaign.apply_async(

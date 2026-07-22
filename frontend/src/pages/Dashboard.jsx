@@ -18,6 +18,7 @@ import StatCard from '../components/StatCard';
 import StatusBadge from '../components/StatusBadge';
 import ScoreBadge from '../components/ScoreBadge';
 import EmptyState from '../components/EmptyState';
+import { toDate } from '../utils/datetime';
 
 const AUDITED_PLUS = [
   'audited',
@@ -41,7 +42,7 @@ function sumStatuses(counts, statuses) {
 
 function safeDate(value) {
   if (!value) return null;
-  const d = new Date(value);
+  const d = toDate(value);
   return Number.isNaN(d.getTime()) ? null : d;
 }
 

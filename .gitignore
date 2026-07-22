@@ -40,3 +40,6 @@ brag-output/
 # Local scratch media
 testing.mp4
 *.mp4
+
+# Local-only account bootstrap (holds a password)
+backend/setup_account.py

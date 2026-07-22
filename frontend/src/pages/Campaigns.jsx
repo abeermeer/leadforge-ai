@@ -5,6 +5,7 @@ import { formatDistanceToNow } from 'date-fns';
 import api from '../api/client';
 import StatusBadge from '../components/StatusBadge';
 import EmptyState from '../components/EmptyState';
+import { toDate } from '../utils/datetime';
 
 const PAGE_SIZE = 20;
 
@@ -21,7 +22,7 @@ function toList(value) {
 
 function safeDate(value) {
   if (!value) return null;
-  const d = new Date(value);
+  const d = toDate(value);
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
