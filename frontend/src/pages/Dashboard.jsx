@@ -167,6 +167,10 @@ export default function Dashboard() {
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
+          <div className="label-caps mb-1 flex items-center gap-1.5">
+            <span className="live-dot" aria-hidden="true" />
+            The Machine
+          </div>
           <h1 className="text-xl font-semibold text-trax9-text">Mission Overview</h1>
           <p className="mt-0.5 text-sm text-trax9-muted">
             {data.campaigns.length} campaign{data.campaigns.length === 1 ? '' : 's'} under
@@ -220,7 +224,7 @@ export default function Dashboard() {
           </div>
 
           {/* The Pipeline — aggregated across all campaigns */}
-          <div className="panel p-4">
+          <div className="node-card p-4 sm:p-5">
             <div className="mb-2 flex items-center justify-between">
               <span className="label-caps">Agent Pipeline &mdash; All Campaigns</span>
             </div>

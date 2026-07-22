@@ -161,7 +161,7 @@ function NewCampaignModal({ onClose, onCreated }) {
       aria-modal="true"
       aria-label="New campaign"
     >
-      <div className="panel w-full max-w-lg p-6 motion-safe:animate-fade-up">
+      <div className="node-card w-full max-w-lg p-6 motion-safe:animate-fade-up">
         <div className="mb-5 flex items-center justify-between">
           <h2 className="text-lg font-semibold text-trax9-text">Deploy New Campaign</h2>
           <button
@@ -274,6 +274,10 @@ export default function Campaigns() {
     <div className="space-y-6 motion-safe:animate-fade-up">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
+          <div className="label-caps mb-1 flex items-center gap-1.5">
+            <span className="live-dot" aria-hidden="true" />
+            Deployments
+          </div>
           <h1 className="text-xl font-semibold text-trax9-text">Campaigns</h1>
           <p className="mt-0.5 text-sm text-trax9-muted">
             {resp.total} mission{resp.total === 1 ? '' : 's'} on record

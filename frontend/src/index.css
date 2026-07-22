@@ -51,14 +51,75 @@
 }
 
 @layer components {
-  /* Card surface — white, soft shadow, hairline border. Matches trax9.com. */
+  /* Card surface — a Machine "node": white panel with a faint violet top-edge
+     wire (inset, no pseudo/position change so absolute children are unaffected). */
   .panel {
     background: #ffffff;
     @apply rounded-xl border border-trax9-border;
     box-shadow:
+      inset 0 2px 0 -1px rgba(73, 20, 196, 0.10),
       0 1px 3px 0 rgba(42, 37, 80, 0.08),
       0 1px 2px -1px rgba(42, 37, 80, 0.06);
   }
+
+  /* A hero node — stronger presence: dotted texture ghost + wired top rail +
+     corner ports. Used for headline/primary panels across every page so the
+     whole app reads as one machine, not just the pipeline. */
+  .node-card {
+    position: relative;
+    background:
+      radial-gradient(#e6e9f7 1px, transparent 1px) 0 0 / 20px 20px,
+      #ffffff;
+    @apply rounded-2xl border border-trax9-border;
+    box-shadow:
+      0 1px 3px 0 rgba(42, 37, 80, 0.08),
+      0 8px 30px -18px rgba(73, 20, 196, 0.35);
+  }
+  .node-card::before {
+    /* top signal wire */
+    content: '';
+    position: absolute;
+    top: -1px;
+    left: 18px;
+    right: 18px;
+    height: 2px;
+    border-radius: 2px;
+    background: linear-gradient(90deg, transparent, rgba(73, 20, 196, 0.6), rgba(0, 123, 255, 0.6), transparent);
+  }
+  /* corner ports — small square nodes at the top corners */
+  .node-card::after {
+    content: '';
+    position: absolute;
+    top: 6px;
+    right: 10px;
+    width: 6px;
+    height: 6px;
+    border-radius: 2px;
+    background: theme('colors.trax9.cyan');
+    box-shadow: 0 0 8px 1px rgba(5, 195, 222, 0.7);
+  }
+
+  /* Mono status chip — pill readout used for counts/states everywhere */
+  .chip {
+    @apply inline-flex items-center gap-1.5 rounded-full border border-trax9-border bg-white px-2.5 py-1 font-mono text-[11px] tabular-nums tracking-tight text-trax9-muted;
+  }
+
+  /* Vertical wire spine for the sidebar node-rail */
+  .nav-node {
+    position: relative;
+  }
+  .nav-node::before {
+    content: '';
+    position: absolute;
+    left: 21px;
+    top: -8px;
+    bottom: -8px;
+    width: 2px;
+    background: linear-gradient(180deg, transparent, #dcdff0 12%, #dcdff0 88%, transparent);
+    z-index: 0;
+  }
+  .nav-node:first-child::before { top: 50%; }
+  .nav-node:last-child::before { bottom: 50%; }
   /* Panel with a thin gold signal rail along the top edge */
   .panel-railed {
     position: relative;
@@ -139,6 +200,29 @@
     background-color: #f4f5fb;
     background-image: radial-gradient(#d4d8ec 1.2px, transparent 1.2px);
     background-size: 22px 22px;
+  }
+
+  /* App-wide Machine backdrop: the same dotted canvas as the pipeline, plus the
+     twin violet/blue glows — so every screen sits inside the machine. Lives as a
+     fixed layer behind all page content. */
+  .machine-bg {
+    background-color: #eef2fb;
+    background-image:
+      radial-gradient(680px 460px at 0% 0%, rgba(73, 20, 196, 0.06), transparent 60%),
+      radial-gradient(720px 520px at 100% 100%, rgba(0, 123, 255, 0.05), transparent 62%),
+      radial-gradient(rgba(210, 216, 238, 0.7) 1.1px, transparent 1.1px);
+    background-size: 100% 100%, 100% 100%, 24px 24px;
+    background-position: 0 0, 0 0, 0 0;
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .machine-bg {
+      animation: driftdots 60s linear infinite;
+    }
+  }
+  @keyframes driftdots {
+    to {
+      background-position: 0 0, 0 0, 24px 24px;
+    }
   }
 
   /* Live agent status dot */

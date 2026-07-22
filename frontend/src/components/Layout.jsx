@@ -48,7 +48,7 @@ function Wordmark({ collapsed }) {
 
 function NavLinks({ collapsed, onNavigate }) {
   return (
-    <nav className="flex flex-1 flex-col gap-1 px-2 py-4" aria-label="Primary">
+    <nav className="flex flex-1 flex-col gap-2 px-3 py-5" aria-label="Primary">
       {NAV_ITEMS.map(({ to, label, icon: Icon, end }) => (
         <NavLink
           key={to}
@@ -58,16 +58,33 @@ function NavLinks({ collapsed, onNavigate }) {
           title={collapsed ? label : undefined}
           className={({ isActive }) =>
             [
-              'flex items-center gap-3 rounded-lg border-l-2 px-3 py-2.5 text-sm font-medium transition-colors',
+              'nav-node group flex items-center gap-3 rounded-xl px-2 py-2 text-sm font-medium transition-colors',
               collapsed ? 'justify-center' : '',
-              isActive
-                ? 'border-trax9-gold bg-trax9-gold/5 text-trax9-gold'
-                : 'border-transparent text-trax9-muted hover:bg-trax9-border/30 hover:text-trax9-text',
+              isActive ? 'text-trax9-gold' : 'text-trax9-muted hover:text-trax9-text',
             ].join(' ')
           }
         >
-          <Icon size={18} strokeWidth={1.75} className="shrink-0" />
-          {!collapsed && <span>{label}</span>}
+          {({ isActive }) => (
+            <>
+              {/* the node orb — lights violet→gold gradient when active, like a Machine agent */}
+              <span
+                className={[
+                  'relative z-10 grid h-9 w-9 shrink-0 place-items-center rounded-full border transition-all',
+                  isActive
+                    ? 'border-transparent bg-gradient-to-br from-[#6d28d9] to-trax9-gold text-white shadow-[0_0_0_4px_rgba(73,20,196,0.12)]'
+                    : 'border-trax9-border bg-white text-trax9-muted group-hover:border-trax9-gold/50 group-hover:text-trax9-gold',
+                ].join(' ')}
+              >
+                <Icon size={17} strokeWidth={1.9} />
+                {isActive && (
+                  <span className="live-dot absolute -right-0.5 -top-0.5" aria-hidden="true" />
+                )}
+              </span>
+              {!collapsed && (
+                <span className="relative z-10 tracking-wide">{label}</span>
+              )}
+            </>
+          )}
         </NavLink>
       ))}
     </nav>
@@ -151,6 +168,12 @@ export default function Layout() {
               <Menu size={20} />
             </button>
             <h1 className="text-base font-semibold tracking-wide text-trax9-text">{title}</h1>
+            <span className="hidden items-center gap-1.5 rounded-full border border-trax9-border bg-white px-2.5 py-1 lg:inline-flex">
+              <span className="live-dot" aria-hidden="true" />
+              <span className="mono-readout text-[10px] uppercase tracking-[0.14em] text-trax9-muted">
+                Machine online
+              </span>
+            </span>
           </div>
 
           <div className="flex items-center gap-4">
@@ -172,7 +195,7 @@ export default function Layout() {
         </header>
 
         <main className="relative flex-1">
-          <div className="glow-topleft pointer-events-none absolute inset-0" aria-hidden="true" />
+          <div className="machine-bg pointer-events-none absolute inset-0" aria-hidden="true" />
           <div className="relative mx-auto w-full max-w-7xl px-4 py-6 sm:px-6">
             <Outlet />
           </div>

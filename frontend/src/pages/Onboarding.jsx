@@ -312,7 +312,7 @@ export default function Onboarding() {
   return (
     <div className="mx-auto max-w-4xl space-y-5">
       {/* Header */}
-      <header className="panel flex flex-col gap-5 p-6 motion-safe:animate-fade-up sm:flex-row sm:items-center">
+      <header className="node-card flex flex-col gap-5 p-6 motion-safe:animate-fade-up sm:flex-row sm:items-center">
         <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full border-2 border-trax9-gold/70 motion-safe:animate-pulse-glow">
           <Brain size={24} strokeWidth={1.5} className="text-trax9-gold" />
         </div>

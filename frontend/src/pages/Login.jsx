@@ -138,7 +138,7 @@ export default function Login() {
       <BrandPanel />
 
       {/* ── Auth card ─────────────────────────────────────────── */}
-      <div className="relative flex flex-1 items-center justify-center px-4 py-10">
+      <div className="machine-bg relative flex flex-1 items-center justify-center px-4 py-10">
         <div
           className="pointer-events-none absolute inset-0"
           style={{
@@ -146,7 +146,7 @@ export default function Login() {
           }}
           aria-hidden="true"
         />
-        <div className="panel relative w-full max-w-md p-8 motion-safe:animate-fade-up">
+        <div className="node-card relative w-full max-w-md p-8 motion-safe:animate-fade-up">
           {/* Mobile wordmark (brand panel hidden below lg) */}
           <div className="mb-8 flex flex-col items-center gap-1 lg:hidden">
             <img src="/trax9-logo-dark.png" alt="Trax9" className="h-8 w-auto" style={{ maxWidth: 150 }} />

@@ -819,7 +819,7 @@ export default function LeadDetail() {
       </button>
 
       {/* ── Company header ─────────────────────────────────── */}
-      <header className="panel p-6 motion-safe:animate-fade-up">
+      <header className="node-card p-6 motion-safe:animate-fade-up">
         <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-3">

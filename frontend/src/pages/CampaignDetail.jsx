@@ -320,9 +320,10 @@ export default function CampaignDetail() {
       )}
 
       {/* THE PIPELINE — full size */}
-      <div className="panel p-4">
-        <div className="mb-2">
-          <span className="label-caps">Agent Pipeline</span>
+      <div className="node-card p-4 sm:p-5">
+        <div className="mb-2 flex items-center gap-1.5">
+          <span className="live-dot" aria-hidden="true" />
+          <span className="label-caps">The Machine &mdash; Agent Pipeline</span>
         </div>
         <PipelineRail tasks={tasks} statusCounts={statusCounts} />
       </div>

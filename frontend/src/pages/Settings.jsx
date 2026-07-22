@@ -259,6 +259,17 @@ export default function Settings() {
 
   return (
     <div className="mx-auto max-w-4xl space-y-5">
+      <div className="motion-safe:animate-fade-up">
+        <div className="label-caps mb-1 flex items-center gap-1.5">
+          <span className="live-dot" aria-hidden="true" />
+          Control Room
+        </div>
+        <h1 className="text-xl font-semibold text-trax9-text">Settings</h1>
+        <p className="mt-0.5 text-sm text-trax9-muted">
+          Keys, models and guardrails that power the machine.
+        </p>
+      </div>
+
       {loadError && (
         <div className="rounded-lg border border-trax9-red/40 bg-trax9-red/10 px-4 py-3 text-sm text-trax9-red" role="alert">
           {loadError}
