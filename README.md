@@ -9,8 +9,8 @@
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.110-009688?logo=fastapi&logoColor=white)
 ![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black)
 ![Celery](https://img.shields.io/badge/Celery-5.3-37814A?logo=celery&logoColor=white)
-![Tests](https://img.shields.io/badge/tests-33%20passing-brightgreen)
-![Security](https://img.shields.io/badge/SSRF%20%7C%20webhook%20auth%20%7C%20rate%20limit-hardened-blue)
+![Tests](https://img.shields.io/badge/tests-39%20passing-brightgreen)
+![Security](https://img.shields.io/badge/SSRF%20%7C%20cookie%20auth%20%7C%20webhook%20auth%20%7C%20GDPR-hardened-blue)
 
 </div>
 
@@ -43,7 +43,7 @@ Paste your agency's website. The **Agency Brain** reads it, learns what you sell
 | ✍️ **Write** | drafts an opener citing one real finding, pitching one matching service |
 | 🚀 **Send** | delivers with warmup, rate limits, unsubscribe, tracking, follow-ups |
 
-Everything is visible live in a mission-control dashboard, themed to the agency's brand.
+Everything is visible live in **"The Machine"** — a mission-control dashboard rendered as a wired node-graph on a dotted canvas, themed to the agency's brand. Run the whole pipeline on autopilot with one click, or fire any stage manually; tick individual brands to audit or write for just that selection.
 
 ```
 Agency Brain → Discover → Email Find → Audit → Score → Enrich → Write → Send → Track → Follow-up
@@ -91,10 +91,13 @@ Hardened against a full production-readiness audit:
 - **Webhook authentication** — SendGrid event-webhook ECDSA signature verification; inbound-parse gated behind a per-deploy path secret; both rate-limited.
 - **Secrets** — per-user API keys are Fernet-encrypted at rest and returned masked; the app **refuses to boot in production** on placeholder secrets.
 - **Rate limiting** — Redis-backed limits on auth, agency-analyze, and webhooks.
-- **Auth** — JWT with server-side revocation (`token_version`) and short expiry; env-driven CORS; non-root container images.
+- **Auth** — JWT delivered as an **httpOnly cookie** (never JavaScript-readable) with a Bearer fallback for API clients; server-side revocation (`token_version`), short expiry, `/logout` + `/logout-everywhere`; env-driven CORS; non-root container images.
+- **Email verification** — sending is gated behind a verified sender address (auto-bypassed in local `DEBUG`).
+- **Privacy / GDPR** — `DELETE /account` permanently erases the user and every owned row (leads, campaigns, logs, sequences, suppressions, settings).
+- **Webhooks fail closed** — in production, the SendGrid event webhook is rejected when no signature-verification key is configured.
 - **Compliance** — one-click unsubscribe + `List-Unsubscribe` header + postal address on every email; suppression list enforced before every send.
 
-Security regression tests (SSRF payloads, webhook auth, IDOR, token revocation, prod fail-fast) run in CI on every push.
+Security regression tests (SSRF payloads, webhook auth + fail-closed, IDOR, token revocation, cookie auth, email-verify gate, GDPR erase, prod fail-fast) run in CI on every push.
 
 ## Quick start
 
@@ -155,15 +158,15 @@ backend/
     net/          safe_http (SSRF guard)
     ratelimit.py  obs.py
   tasks/          celery app + discovery/audit/send/sequence tasks
-  tests/          33 tests (phase gates + security), external calls mocked
-frontend/         React mission-control dashboard
+  tests/          39 tests (phase gates + security), external calls mocked
+frontend/         React "The Machine" mission-control dashboard
 docs/             PRD, build plan, system-design, demo video
 .github/          CI (pytest + build + dependency audit)
 ```
 
 ## Status
 
-Phases 1–6 complete · 33/33 tests green · frontend builds clean · security-audit criticals closed · live-verified against real websites (agency brain, email finder, SEO/brand audit, AI email writing).
+Phases 1–6 complete · 39/39 tests green · CI green (backend + frontend) · frontend builds clean · two production-readiness security audits closed · live-verified against real websites (agency brain, email finder, SEO/brand audit, AI email writing).
 
 <div align="center">
 <sub>Built for the Trax9 agency. Proprietary.</sub>
