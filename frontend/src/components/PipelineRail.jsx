@@ -144,7 +144,7 @@ export default function PipelineRail({ tasks = [], statusCounts = {}, compact = 
       </div>
 
       {/* the wired node rail */}
-      <div className="relative overflow-x-auto pb-1">
+      <div className="relative overflow-x-auto px-1 pb-2 pt-3">
         <div className={['flex items-stretch', compact ? 'min-w-[640px]' : 'min-w-[820px]'].join(' ')}>
           {STAGES.map((stage, i) => {
             const state = states[i];
