@@ -6,17 +6,30 @@ The Settings API must never return a full key — use mask_key() for display.
 import base64
 import hashlib
 import json
+import logging
 
 from cryptography.fernet import Fernet, InvalidToken
 
 from config import settings
 
+logger = logging.getLogger("trax9.crypto")
+
 
 def _fernet() -> Fernet:
     key = settings.FERNET_KEY
     if not key:
-        # Dev-only fallback: derive a stable key from SECRET_KEY.
-        # Production MUST set FERNET_KEY explicitly.
+        # Dev-only fallback: derive a stable key from SECRET_KEY. This path is
+        # forbidden outside DEBUG — main.py's lifespan refuses to boot a
+        # non-DEBUG app with an empty FERNET_KEY, so this only runs in local dev.
+        if not settings.DEBUG:
+            raise RuntimeError(
+                "FERNET_KEY is not set and DEBUG is False — refusing to derive a "
+                "key from SECRET_KEY in production. Set FERNET_KEY."
+            )
+        logger.warning(
+            "FERNET_KEY not set — deriving a DEV-ONLY key from SECRET_KEY. "
+            "Never do this in production."
+        )
         digest = hashlib.sha256(settings.SECRET_KEY.encode()).digest()
         key = base64.urlsafe_b64encode(digest).decode()
     return Fernet(key.encode() if isinstance(key, str) else key)
@@ -34,6 +47,13 @@ def decrypt_dict(token: bytes | None) -> dict:
     try:
         return json.loads(_fernet().decrypt(bytes(token)))
     except (InvalidToken, ValueError):
+        # Corrupted blob, or (more likely) FERNET_KEY was rotated without
+        # re-encrypting existing rows. Log loudly — silently returning {} looks
+        # identical to "user configured no keys" and hides a rotation mistake.
+        logger.warning(
+            "decrypt_dict: could not decrypt a secrets blob (corrupt data or "
+            "FERNET_KEY mismatch after rotation) — treating as empty."
+        )
         return {}
 
 

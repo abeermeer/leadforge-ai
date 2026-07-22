@@ -41,11 +41,18 @@ def get_current_user(
         user_id = payload.get("sub")
         if user_id is None:
             raise unauthorized
-    except JWTError:
+        # Malformed 'sub' must be a clean 401, not an unhandled ValueError -> 500 (audit §3).
+        user_uuid = uuid.UUID(str(user_id))
+    except (JWTError, ValueError):
         raise unauthorized
 
-    user = db.get(User, uuid.UUID(user_id))
+    user = db.get(User, user_uuid)
     if user is None:
+        raise unauthorized
+    # Token revocation (audit 1.5): a token minted before the user's current
+    # token_version (bumped on logout-everywhere / password change) is rejected.
+    token_ver = payload.get("ver", 0)
+    if token_ver != getattr(user, "token_version", 0):
         raise unauthorized
     return user
 

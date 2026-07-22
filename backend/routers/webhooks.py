@@ -1,11 +1,17 @@
-"""Public webhooks (PRD 3D webhook + 3D.5): SendGrid events, inbound replies, unsubscribe."""
+"""Public webhooks (PRD 3D webhook + 3D.5): SendGrid events, inbound replies, unsubscribe.
+
+Security (audit 1.2/1.4): the event webhook verifies SendGrid's ECDSA signature
+when a verification key is configured; the inbound endpoint is gated behind a
+per-deployment secret in its path; both are rate-limited per IP.
+"""
 import logging
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
+from config import settings
 from deps import get_db
 from models import (
     EmailLog,
@@ -15,12 +21,49 @@ from models import (
     Suppression,
     SuppressionReason,
 )
+from services import ratelimit
 from services.email.reply_tracker import handle_inbound
 from services.email.sender import verify_unsub_token
 from services.email.sequencer import cancel_sequence
 
 router = APIRouter()
 logger = logging.getLogger("trax9.webhooks")
+
+
+def _rate_limit_webhook(request: Request) -> None:
+    ip = ratelimit.client_ip(request)
+    if not ratelimit.check(
+        f"wh:{ip}", settings.RATE_LIMIT_WEBHOOK_MAX, settings.RATE_LIMIT_WEBHOOK_WINDOW_SEC
+    ):
+        raise HTTPException(status_code=429, detail="Too many requests")
+
+
+def _verify_sendgrid_signature(raw_body: bytes, request: Request) -> None:
+    """Verify the SendGrid Event Webhook ECDSA signature. 401 on failure.
+
+    Skipped (with a warning) only when no verification key is configured — that
+    path is for local dev, never production.
+    """
+    key = settings.SENDGRID_WEBHOOK_VERIFICATION_KEY
+    if not key:
+        logger.warning("SENDGRID_WEBHOOK_VERIFICATION_KEY unset — skipping signature check (dev)")
+        return
+    from sendgrid.helpers.eventwebhook import EventWebhook, EventWebhookHeader
+
+    signature = request.headers.get(EventWebhookHeader.SIGNATURE)
+    timestamp = request.headers.get(EventWebhookHeader.TIMESTAMP)
+    if not signature or not timestamp:
+        raise HTTPException(status_code=401, detail="Missing webhook signature")
+    try:
+        ew = EventWebhook()
+        ecdsa_key = ew.convert_public_key_to_ecdsa(key)
+        ok = ew.verify_signature(raw_body.decode("utf-8"), signature, timestamp, ecdsa_key)
+    except Exception as exc:
+        logger.warning("webhook signature verification error: %s", exc)
+        raise HTTPException(status_code=401, detail="Invalid webhook signature")
+    if not ok:
+        logger.warning("webhook signature verification FAILED from %s", ratelimit.client_ip(request))
+        raise HTTPException(status_code=401, detail="Invalid webhook signature")
 
 
 def _suppress(db: Session, user_id, email: str, reason: SuppressionReason) -> None:
@@ -37,9 +80,14 @@ def _suppress(db: Session, user_id, email: str, reason: SuppressionReason) -> No
 
 @router.post("/webhook/email")
 async def sendgrid_events(request: Request, db: Session = Depends(get_db)):
-    """SendGrid event webhook. Dedup by sg_event_id; respond 200 fast."""
+    """SendGrid event webhook. Verify signature, dedup by sg_event_id, respond 200 fast."""
+    _rate_limit_webhook(request)
+    raw = await request.body()
+    _verify_sendgrid_signature(raw, request)  # 401 before touching the DB
+    import json as _json
+
     try:
-        events = await request.json()
+        events = _json.loads(raw)
     except Exception:
         return {"ok": True}
     if not isinstance(events, list):
@@ -104,9 +152,17 @@ async def sendgrid_events(request: Request, db: Session = Depends(get_db)):
     return {"ok": True}
 
 
-@router.post("/webhook/inbound")
-async def inbound_parse(request: Request, db: Session = Depends(get_db)):
-    """SendGrid inbound parse -> reply detection."""
+@router.post("/webhook/inbound/{secret}")
+async def inbound_parse(secret: str, request: Request, db: Session = Depends(get_db)):
+    """SendGrid inbound parse -> reply detection. Gated behind a path secret (audit 1.2)."""
+    _rate_limit_webhook(request)
+    configured = settings.INBOUND_WEBHOOK_SECRET
+    # If a secret is configured it must match; if not configured, 404 so the
+    # endpoint is never triggerable by an outsider guessing a lead's email.
+    import hmac as _hmac
+
+    if not configured or not _hmac.compare_digest(secret, configured):
+        raise HTTPException(status_code=404, detail="Not found")
     try:
         form = await request.form()
         payload = {k: v for k, v in form.items()}

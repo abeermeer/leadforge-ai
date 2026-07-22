@@ -71,7 +71,7 @@ def test_profile_analyze_and_campaign_prefill():
     _put_keys(auth)
 
     # Agency site pages
-    respx.get(url__regex=r"https://trax9\.example.*").mock(
+    respx.get(url__regex=r"https://example.com.*").mock(
         return_value=Response(
             200,
             text="<html><body><nav><a href='/services'>Services</a></nav>"
@@ -90,7 +90,7 @@ def test_profile_analyze_and_campaign_prefill():
     )
 
     r = client.post(
-        "/api/profile/analyze", headers=auth, json={"website": "https://trax9.example"}
+        "/api/profile/analyze", headers=auth, json={"website": "https://example.com"}
     )
     assert r.status_code == 200, r.text
     body = r.json()

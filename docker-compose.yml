@@ -1,5 +1,8 @@
-version: '3.8'
-
+# Security notes (audit 2.1):
+# - db/redis are NOT published to the host — only reachable on the compose
+#   network. Uncomment the 127.0.0.1-bound ports for local debugging only.
+# - DB_PASSWORD and REDIS_PASSWORD are required (no ":-password" default).
+# - Redis requires a password (requirepass) passed through REDIS_URL.
 services:
   db:
     image: postgres:15-alpine
@@ -8,15 +11,16 @@ services:
     environment:
       POSTGRES_DB: trax9_leads
       POSTGRES_USER: trax9
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-password}
-    ports:
-      - "5432:5432"
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+    # ports:                       # host access for debugging only:
+    #   - "127.0.0.1:5432:5432"
     restart: unless-stopped
 
   redis:
     image: redis:7-alpine
-    ports:
-      - "6379:6379"
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:?REDIS_PASSWORD is required}"]
+    # ports:
+    #   - "127.0.0.1:6379:6379"
     restart: unless-stopped
 
   backend:
@@ -31,11 +35,11 @@ services:
     env_file:
       - .env
     environment:
-      DATABASE_URL: postgresql://trax9:${DB_PASSWORD:-password}@db:5432/trax9_leads
-      REDIS_URL: redis://redis:6379/0
+      DATABASE_URL: postgresql://trax9:${DB_PASSWORD}@db:5432/trax9_leads
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
     command: >
       sh -c "alembic upgrade head &&
-             uvicorn main:app --host 0.0.0.0 --port 8000"
+             uvicorn main:app --host 0.0.0.0 --port 8000 --workers 4"
     healthcheck:
       test: ["CMD", "python", "-c", "import httpx;httpx.get('http://localhost:8000/health').raise_for_status()"]
       interval: 30s
@@ -53,8 +57,8 @@ services:
     env_file:
       - .env
     environment:
-      DATABASE_URL: postgresql://trax9:${DB_PASSWORD:-password}@db:5432/trax9_leads
-      REDIS_URL: redis://redis:6379/0
+      DATABASE_URL: postgresql://trax9:${DB_PASSWORD}@db:5432/trax9_leads
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
     command: celery -A tasks.celery_app worker --loglevel=info --concurrency=5 -Q profile,discovery,email_find,audit,email
     restart: unless-stopped
 
@@ -67,8 +71,8 @@ services:
     env_file:
       - .env
     environment:
-      DATABASE_URL: postgresql://trax9:${DB_PASSWORD:-password}@db:5432/trax9_leads
-      REDIS_URL: redis://redis:6379/0
+      DATABASE_URL: postgresql://trax9:${DB_PASSWORD}@db:5432/trax9_leads
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
     command: celery -A tasks.celery_app beat --loglevel=info
     restart: unless-stopped
 

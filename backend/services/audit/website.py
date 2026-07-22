@@ -21,6 +21,7 @@ from bs4 import BeautifulSoup
 
 from services.discovery import normalize_domain
 from services.discovery.email_finder import EMAIL_RE, JUNK_TOKENS, MAILTO_RE
+from services.net.safe_http import safe_get
 
 logger = logging.getLogger("trax9.audit.website")
 
@@ -316,14 +317,15 @@ async def _fetch_homepage(url: str) -> tuple[httpx.Response, int, bool]:
         target = f"https://{target}"
 
     ssl_valid = True
+    # follow_redirects=False: safe_get follows + re-validates each hop (SSRF guard).
     async with httpx.AsyncClient(
         timeout=FETCH_TIMEOUT_SECONDS,
-        follow_redirects=True,
+        follow_redirects=False,
         headers={"User-Agent": USER_AGENT},
     ) as client:
         started = time.monotonic()
         try:
-            response = await client.get(target)
+            response = await safe_get(target, client=client)
         except httpx.HTTPError:
             if not target.startswith("https://"):
                 raise
@@ -331,7 +333,7 @@ async def _fetch_homepage(url: str) -> tuple[httpx.Response, int, bool]:
             ssl_valid = False
             target = "http://" + target[len("https://"):]
             started = time.monotonic()
-            response = await client.get(target)
+            response = await safe_get(target, client=client)
         load_time_ms = int((time.monotonic() - started) * 1000)
 
     response.raise_for_status()

@@ -24,8 +24,30 @@ logging.basicConfig(
 logger = logging.getLogger("trax9")
 
 
+def _assert_production_secrets() -> None:
+    """Refuse to boot a non-DEBUG app on placeholder/empty secrets (audit 1.3).
+
+    Fail loud at deploy time, not silently at data-breach time.
+    """
+    if settings.DEBUG:
+        return
+    problems = []
+    if settings.using_default_secret:
+        problems.append("SECRET_KEY is still the public default")
+    if not settings.FERNET_KEY:
+        problems.append("FERNET_KEY is empty (secrets would use a key derived from SECRET_KEY)")
+    if problems:
+        raise RuntimeError(
+            "Refusing to start in production with insecure secrets: "
+            + "; ".join(problems)
+            + ". Set SECRET_KEY and FERNET_KEY (generate FERNET_KEY with "
+            "`python -c \"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())\"`)."
+        )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    _assert_production_secrets()
     # Dev convenience: create tables on boot when running SQLite without Alembic.
     # Postgres deployments run `alembic upgrade head` before start (see compose).
     if settings.DATABASE_URL.startswith("sqlite"):
@@ -37,9 +59,10 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title=settings.APP_NAME, lifespan=lifespan)
 
+# Env-driven CORS (audit 1.6): only the configured frontend origins, never "*".
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:5173"],
+    allow_origins=settings.allowed_origins_list,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -48,9 +71,16 @@ app.add_middleware(
 
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception):
-    # Never leak stack traces to clients
-    logger.exception("unhandled error on %s %s", request.method, request.url.path)
-    return JSONResponse(status_code=500, content={"detail": "Internal server error"})
+    # Never leak stack traces to clients; surface the request id so a user can
+    # report a specific failure (audit §3).
+    request_id = getattr(request.state, "request_id", None)
+    logger.exception(
+        "unhandled error on %s %s (request_id=%s)", request.method, request.url.path, request_id
+    )
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error", "request_id": request_id},
+    )
 
 
 @app.get("/health")

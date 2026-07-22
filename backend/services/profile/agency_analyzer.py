@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 
 from models import AgencyProfile
 from services.ai.client import ai_json, record_ai_usage
+from services.net.safe_http import UnsafeURLError, safe_get
 
 FETCH_TIMEOUT_SECONDS = 15.0
 MAX_INTERNAL_PAGES = 6
@@ -116,21 +117,22 @@ async def fetch_agency_pages(url: str) -> dict[str, str]:
     homepage_url = _normalize_url(url)
     pages: dict[str, str] = {}
 
+    # follow_redirects=False: safe_get follows + re-validates each hop itself (SSRF guard).
     async with httpx.AsyncClient(
-        follow_redirects=True,
+        follow_redirects=False,
         timeout=FETCH_TIMEOUT_SECONDS,
         headers={"User-Agent": USER_AGENT},
     ) as client:
-        response = await client.get(homepage_url)
+        response = await safe_get(homepage_url, client=client)
         response.raise_for_status()
         pages["homepage"] = _html_to_text(response.text)
 
         for link in _internal_links(homepage_url, response.text):
             try:
-                page_response = await client.get(link)
+                page_response = await safe_get(link, client=client)
                 page_response.raise_for_status()
-            except httpx.HTTPError:
-                continue  # partial content is still useful
+            except (httpx.HTTPError, UnsafeURLError):
+                continue  # partial content / blocked link is still fine to skip
             content_type = page_response.headers.get("content-type", "")
             if "html" not in content_type:
                 continue

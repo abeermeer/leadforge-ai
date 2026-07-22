@@ -36,3 +36,7 @@ Thumbs.db
 
 # Generated marketing assets
 brag-output/
+
+# Local scratch media
+testing.mp4
+*.mp4

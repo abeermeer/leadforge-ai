@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     # Auth / secrets
     SECRET_KEY: str = "change-me-jwt-secret"
     JWT_ALGORITHM: str = "HS256"
-    JWT_EXPIRY_HOURS: int = 72
+    JWT_EXPIRY_HOURS: int = 12  # shorter session (audit 1.5); was 72
     # Fernet key for encrypting user_settings.encrypted_keys.
     # Empty -> crypto.py derives a dev-only key from SECRET_KEY (never for production).
     FERNET_KEY: str = ""
@@ -55,6 +55,35 @@ class Settings(BaseSettings):
 
     # Observability
     SENTRY_DSN: str = ""
+
+    # Webhook security (audit 1.2). When set, SendGrid event-webhook signatures
+    # are verified (ECDSA); when empty, verification is skipped with a warning
+    # (dev only). The inbound-parse endpoint requires this secret in its path.
+    SENDGRID_WEBHOOK_VERIFICATION_KEY: str = ""
+    INBOUND_WEBHOOK_SECRET: str = ""
+
+    # Rate limiting (audit 1.4). Redis-backed; fails OPEN if Redis is down.
+    RATE_LIMIT_AUTH_MAX: int = 5          # attempts per window
+    RATE_LIMIT_AUTH_WINDOW_SEC: int = 900  # 15 min
+    RATE_LIMIT_ANALYZE_MAX: int = 10      # profile-analyze per window per user
+    RATE_LIMIT_ANALYZE_WINDOW_SEC: int = 3600
+    RATE_LIMIT_WEBHOOK_MAX: int = 240     # per IP per minute
+    RATE_LIMIT_WEBHOOK_WINDOW_SEC: int = 60
+
+    # CORS — comma-separated allowed origins for the browser frontend.
+    ALLOWED_ORIGINS: str = "http://localhost:3000,http://localhost:5173,http://127.0.0.1:5173"
+
+    @property
+    def allowed_origins_list(self) -> list[str]:
+        return [o.strip() for o in self.ALLOWED_ORIGINS.split(",") if o.strip()]
+
+    @property
+    def using_default_secret(self) -> bool:
+        return self.SECRET_KEY == "change-me-jwt-secret"
+
+
+# Placeholder values that must never run in production.
+INSECURE_SECRET_DEFAULT = "change-me-jwt-secret"
 
 
 @lru_cache

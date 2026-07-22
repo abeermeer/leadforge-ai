@@ -3,9 +3,12 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from config import settings
 from deps import get_current_user, get_db, get_decrypted_keys, get_user_settings
 from models import AgencyProfile, User, UserSettings
 from schemas import ProfileAnalyzeRequest, ProfileOut
+from services import ratelimit
+from services.net.safe_http import UnsafeURLError
 from services.profile.agency_analyzer import analyze_agency
 
 router = APIRouter()
@@ -20,6 +23,15 @@ async def analyze_profile(
     db: Session = Depends(get_db),
 ):
     """Scrape the agency website, run AI analysis inline, upsert + return the profile."""
+    # Per-user throttle: this endpoint hits arbitrary external hosts — don't let
+    # it double as a port scanner even after the SSRF guard (audit 1.4).
+    if not ratelimit.check(
+        f"analyze:{user.id}",
+        settings.RATE_LIMIT_ANALYZE_MAX,
+        settings.RATE_LIMIT_ANALYZE_WINDOW_SEC,
+    ):
+        raise HTTPException(status_code=429, detail="Too many analyses — try again later")
+
     provider = (
         user_settings.ai_provider.value
         if hasattr(user_settings.ai_provider, "value")
@@ -33,6 +45,8 @@ async def analyze_profile(
         return await analyze_agency(
             body.website, user.id, db, provider=provider, api_key=api_key
         )
+    except UnsafeURLError as exc:
+        raise HTTPException(status_code=400, detail=f"That URL is not allowed: {exc}")
     except httpx.HTTPStatusError as exc:
         raise HTTPException(
             status_code=502,

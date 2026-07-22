@@ -139,6 +139,8 @@ class User(Base):
     name: Mapped[str] = mapped_column(String(255))
     plan: Mapped[UserPlan] = mapped_column(Enum(UserPlan), default=UserPlan.free)
     monthly_email_quota: Mapped[int] = mapped_column(Integer, default=1000)
+    # Bumped to invalidate all outstanding JWTs (logout-everywhere / password change).
+    token_version: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
 
     settings: Mapped["UserSettings"] = relationship(back_populates="user", uselist=False)
