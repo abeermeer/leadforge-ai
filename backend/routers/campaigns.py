@@ -33,7 +33,7 @@ from models import (
     User,
     UserSettings,
 )
-from schemas import CampaignCreate, CampaignOut, CampaignUpdate, LeadOut, Paginated, TaskOut
+from schemas import CampaignCreate, CampaignOut, CampaignUpdate, LeadOut, LeadSubset, Paginated, TaskOut
 from services.discovery.google_maps import search_places
 from services.discovery.google_search import search_google
 from tasks.audit_tasks import (
@@ -318,12 +318,13 @@ def _audit_keys(settings_row: UserSettings, keys: dict) -> dict:
 @router.post("/campaigns/{campaign_id}/audit")
 def audit_campaign_endpoint(
     campaign_id: uuid.UUID,
+    body: LeadSubset = LeadSubset(),
     user: User = Depends(get_current_user),
     keys: dict = Depends(get_decrypted_keys),
     settings_row: UserSettings = Depends(get_user_settings),
     db: Session = Depends(get_db),
 ):
-    """Trigger the audit fan-out: enqueue the Celery chord, or run inline if Redis is down."""
+    """Audit the campaign's eligible leads, or just the selected `lead_ids`."""
     campaign = _get_campaign(db, user, campaign_id)
 
     audit_keys = _audit_keys(settings_row, keys)
@@ -336,18 +337,20 @@ def audit_campaign_endpoint(
         campaign.status = CampaignStatus.running
         db.commit()
 
-    try:
-        audit_campaign.apply_async(
-            args=(str(campaign.id), audit_keys), retry=False, ignore_result=True
-        )
-        return {"detail": "Audit queued", "mode": "queued"}
-    except Exception as exc:  # broker unreachable
-        logger.warning(
-            "celery broker unavailable (%s) — running audit inline", exc.__class__.__name__
-        )
+    lead_ids = body.lead_ids
+    # Queue path only when auditing the whole campaign (subset runs inline for immediacy).
+    if not lead_ids:
+        try:
+            audit_campaign.apply_async(
+                args=(str(campaign.id), audit_keys), retry=False, ignore_result=True
+            )
+            return {"detail": "Audit queued", "mode": "queued"}
+        except Exception as exc:  # broker unreachable
+            logger.warning(
+                "celery broker unavailable (%s) — running audit inline", exc.__class__.__name__
+            )
 
-    # Synchronous fallback (Redis down): audit up to INLINE_AUDIT_CAP leads in-request.
-    leads = eligible_audit_leads(db, campaign)[:INLINE_AUDIT_CAP]
+    leads = eligible_audit_leads(db, campaign, lead_ids)[:INLINE_AUDIT_CAP]
     if not leads:
         return {"detail": "No eligible leads to audit", "mode": "inline", "audited": 0}
 
@@ -360,7 +363,7 @@ def audit_campaign_endpoint(
     db.commit()
 
     return {
-        "detail": "Audit ran inline (queue unavailable)",
+        "detail": f"Audited {len(leads)} lead(s)",
         "mode": "inline",
         "audited": len(leads),
         "task_id": str(task_row.id),
@@ -370,24 +373,13 @@ def audit_campaign_endpoint(
 # ------------------------------------------------------------------ write
 
 
-@router.post("/campaigns/{campaign_id}/write")
-def write_campaign_endpoint(
-    campaign_id: uuid.UUID,
-    user: User = Depends(get_current_user),
-    keys: dict = Depends(get_decrypted_keys),
-    settings_row: UserSettings = Depends(get_user_settings),
-    db: Session = Depends(get_db),
-):
-    """Generate outreach email copy for every scored/enriched lead (no send).
-
-    Runs inline with the user's AI key — this is the WRITE stage of the pipeline.
-    """
+def _write_for_leads(db, user, campaign, keys, settings_row, lead_ids=None):
+    """Generate email copy for scored/enriched leads (optionally a subset). Returns count."""
     import asyncio
 
     from services.ai.client import record_ai_usage
     from services.email.writer import generate_email
 
-    campaign = _get_campaign(db, user, campaign_id)
     provider = (
         settings_row.ai_provider.value
         if hasattr(settings_row.ai_provider, "value")
@@ -405,16 +397,15 @@ def write_campaign_endpoint(
     )
     agency_services = (profile.services if profile else None) or []
 
-    leads = (
-        db.query(Lead)
-        .filter(
-            Lead.campaign_id == campaign.id,
-            Lead.status.in_([LeadStatus.scored, LeadStatus.enriched, LeadStatus.audited]),
-        )
-        .all()
+    q = db.query(Lead).filter(
+        Lead.campaign_id == campaign.id,
+        Lead.status.in_([LeadStatus.scored, LeadStatus.enriched, LeadStatus.audited]),
     )
+    if lead_ids:
+        q = q.filter(Lead.id.in_(lead_ids))
+    leads = q.all()
     if not leads:
-        return {"detail": "No scored leads to write for yet — run Audit first", "written": 0}
+        return 0, 0
 
     task_row = Task(
         user_id=user.id, campaign_id=campaign.id, type=TaskType.write,
@@ -447,7 +438,90 @@ def write_campaign_endpoint(
 
     task_row.status = TaskStatus.completed
     db.commit()
-    return {"detail": "Emails written", "written": written, "total": len(leads)}
+    return written, len(leads)
+
+
+@router.post("/campaigns/{campaign_id}/write")
+def write_campaign_endpoint(
+    campaign_id: uuid.UUID,
+    body: LeadSubset = LeadSubset(),
+    user: User = Depends(get_current_user),
+    keys: dict = Depends(get_decrypted_keys),
+    settings_row: UserSettings = Depends(get_user_settings),
+    db: Session = Depends(get_db),
+):
+    """Generate outreach copy for every scored lead, or just the selected `lead_ids`."""
+    campaign = _get_campaign(db, user, campaign_id)
+    written, total = _write_for_leads(db, user, campaign, keys, settings_row, body.lead_ids)
+    if total == 0:
+        return {"detail": "No scored leads to write for yet — run Audit first", "written": 0}
+    return {"detail": f"Wrote {written} email(s)", "written": written, "total": total}
+
+
+@router.post("/campaigns/{campaign_id}/autopilot")
+def autopilot_endpoint(
+    campaign_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    keys: dict = Depends(get_decrypted_keys),
+    settings_row: UserSettings = Depends(get_user_settings),
+    db: Session = Depends(get_db),
+):
+    """Run the whole pipeline in one shot: discover (if keys) -> audit -> write.
+
+    Email-finding, scoring, and enrichment run automatically inside those stages.
+    Stops before Send so nothing goes out without review.
+    """
+    import asyncio
+
+    campaign = _get_campaign(db, user, campaign_id)
+    audit_keys = _audit_keys(settings_row, keys)
+    if not audit_keys["ai_key"]:
+        raise HTTPException(status_code=400, detail="Configure your AI API key in Settings first")
+
+    campaign.status = CampaignStatus.running
+    db.commit()
+    steps = {}
+
+    # 1. Discovery (best-effort; needs Google keys). Skips cleanly without them.
+    kws = [k for k in (campaign.seed_keywords or []) if k]
+    locs = [loc for loc in (campaign.target_locations or []) if loc]
+    if kws and locs and keys.get("google_custom_search") and keys.get("google_custom_search_cx"):
+        task_row = create_discovery_task_row(db, campaign, total_items=len(kws) * len(locs) * 2)
+        batches = []
+        for kw in kws:
+            for loc in locs:
+                try:
+                    batches.append(asyncio.run(search_places(kw, loc, api_key=keys.get("google_places"))))
+                except Exception:
+                    pass
+                try:
+                    batches.append(asyncio.run(search_google(
+                        kw, loc, api_key=keys.get("google_custom_search"),
+                        cx=keys.get("google_custom_search_cx"))))
+                except Exception:
+                    pass
+        steps["discovered"] = save_leads_for_campaign(db, campaign, batches)
+        task_row.completed_items = task_row.total_items
+        task_row.status = TaskStatus.completed
+        db.commit()
+
+    # 2. Audit every eligible lead (inline, capped). Email-find happens per-lead as needed.
+    leads = eligible_audit_leads(db, campaign)[:INLINE_AUDIT_CAP]
+    if leads:
+        arow = create_audit_task_row(db, campaign, total_items=len(leads))
+        for lead in leads:
+            _audit_one(db, lead, audit_keys)
+            arow.completed_items = (arow.completed_items or 0) + 1
+            db.commit()
+        arow.status = TaskStatus.completed
+        db.commit()
+    steps["audited"] = len(leads)
+
+    # 3. Write copy for everything now scored.
+    written, _ = _write_for_leads(db, user, campaign, keys, settings_row)
+    steps["written"] = written
+
+    return {"detail": "Autopilot complete", "mode": "inline", **steps}
 
 
 # ------------------------------------------------------------------ send + export

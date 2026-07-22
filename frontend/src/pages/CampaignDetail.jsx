@@ -5,6 +5,7 @@ import {
   Radar,
   ScanSearch,
   PenLine,
+  Zap,
   Loader2,
   Search,
   ArrowUpDown,
@@ -93,7 +94,8 @@ export default function CampaignDetail() {
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [error, setError] = useState('');
-  const [actionBusy, setActionBusy] = useState(''); // 'discover' | 'audit' during POST
+  const [actionBusy, setActionBusy] = useState(''); // 'discover'|'audit'|'write'|'autopilot'|'audit-sel'|'write-sel'
+  const [selected, setSelected] = useState(new Set()); // selected lead ids
 
   // ---- data fetchers -------------------------------------------------------
 
@@ -212,11 +214,12 @@ export default function CampaignDetail() {
 
   // ---- actions -------------------------------------------------------------
 
-  const trigger = async (kind) => {
+  const trigger = async (kind, body) => {
     setActionBusy(kind);
     setError('');
     try {
-      await api.post(`/campaigns/${id}/${kind}`);
+      await api.post(`/campaigns/${id}/${kind}`, body);
+      if (aliveRef.current) setSelected(new Set());
       await fetchCore();
     } catch (err) {
       const detail =
@@ -228,6 +231,17 @@ export default function CampaignDetail() {
       if (aliveRef.current) setActionBusy('');
     }
   };
+
+  // ---- lead selection (checkboxes -> run audit/write on a subset) ----------
+  const toggleOne = (leadId) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      next.has(leadId) ? next.delete(leadId) : next.add(leadId);
+      return next;
+    });
+  const toggleAll = () =>
+    setSelected((prev) => (prev.size === rows.length ? new Set() : new Set(rows.map((r) => r.id))));
+  const selectedIds = () => Array.from(selected);
 
   // ---- render --------------------------------------------------------------
 
@@ -319,6 +333,21 @@ export default function CampaignDetail() {
           <button
             type="button"
             className="btn-gold"
+            onClick={() => trigger('autopilot')}
+            disabled={!!actionBusy}
+            title="Discover → audit → score → enrich → write, all in one run"
+          >
+            {actionBusy === 'autopilot' ? (
+              <Loader2 size={16} className="motion-safe:animate-spin" />
+            ) : (
+              <Zap size={16} />
+            )}
+            {actionBusy === 'autopilot' ? 'Running Pipeline…' : 'Run Full Pipeline'}
+          </button>
+          <span className="mx-1 hidden text-xs text-trax9-muted sm:inline">or run a stage:</span>
+          <button
+            type="button"
+            className="btn-ghost"
             onClick={() => trigger('discover')}
             disabled={discoverBusy}
           >
@@ -331,7 +360,7 @@ export default function CampaignDetail() {
           </button>
           <button
             type="button"
-            className="btn-gold"
+            className="btn-ghost"
             onClick={() => trigger('audit')}
             disabled={auditBusy}
           >
@@ -344,7 +373,7 @@ export default function CampaignDetail() {
           </button>
           <button
             type="button"
-            className="btn-gold"
+            className="btn-ghost"
             onClick={() => trigger('write')}
             disabled={writeBusy}
             title="Draft outreach emails for every scored lead"
@@ -423,10 +452,59 @@ export default function CampaignDetail() {
             </div>
           ) : (
             <>
+              {selected.size > 0 && (
+                <div className="flex flex-wrap items-center gap-3 border-b border-trax9-border/60 bg-trax9-gold/[0.06] px-4 py-2.5">
+                  <span className="mono-readout text-xs font-semibold text-trax9-text">
+                    {selected.size} selected
+                  </span>
+                  <button
+                    type="button"
+                    className="btn-gold px-3 py-1.5 text-xs"
+                    disabled={!!actionBusy}
+                    onClick={() => trigger('audit', { lead_ids: selectedIds() })}
+                  >
+                    {actionBusy === 'audit' ? (
+                      <Loader2 size={13} className="motion-safe:animate-spin" />
+                    ) : (
+                      <ScanSearch size={13} />
+                    )}
+                    Audit selected
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-ghost px-3 py-1.5 text-xs"
+                    disabled={!!actionBusy}
+                    onClick={() => trigger('write', { lead_ids: selectedIds() })}
+                  >
+                    {actionBusy === 'write' ? (
+                      <Loader2 size={13} className="motion-safe:animate-spin" />
+                    ) : (
+                      <PenLine size={13} />
+                    )}
+                    Write selected
+                  </button>
+                  <button
+                    type="button"
+                    className="ml-auto text-xs text-trax9-muted hover:text-trax9-text"
+                    onClick={() => setSelected(new Set())}
+                  >
+                    Clear
+                  </button>
+                </div>
+              )}
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-sm">
                   <thead>
                     <tr className="border-b border-trax9-border/60">
+                      <th className="w-9 px-4 py-2.5">
+                        <input
+                          type="checkbox"
+                          aria-label="Select all leads"
+                          checked={rows.length > 0 && selected.size === rows.length}
+                          onChange={toggleAll}
+                          className="h-4 w-4 accent-trax9-gold"
+                        />
+                      </th>
                       <th className="label-caps px-4 py-2.5 font-semibold">Company</th>
                       <th className="label-caps hidden px-4 py-2.5 font-semibold lg:table-cell">
                         Website
@@ -459,8 +537,20 @@ export default function CampaignDetail() {
                       <tr
                         key={lead.id}
                         onClick={() => navigate(`/leads/${lead.id}`)}
-                        className="cursor-pointer border-b border-trax9-border/40 transition-colors last:border-b-0 hover:bg-trax9-border/20"
+                        className={[
+                          'cursor-pointer border-b border-trax9-border/40 transition-colors last:border-b-0 hover:bg-trax9-border/20',
+                          selected.has(lead.id) ? 'bg-trax9-gold/[0.05]' : '',
+                        ].join(' ')}
                       >
+                        <td className="px-4 py-2.5" onClick={(e) => e.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            aria-label={`Select ${lead.company_name}`}
+                            checked={selected.has(lead.id)}
+                            onChange={() => toggleOne(lead.id)}
+                            className="h-4 w-4 accent-trax9-gold"
+                          />
+                        </td>
                         <td className="max-w-[200px] truncate px-4 py-2.5 font-medium text-trax9-text">
                           {lead.company_name || '—'}
                         </td>

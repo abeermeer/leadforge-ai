@@ -195,3 +195,8 @@ class Paginated(BaseModel):
     page: int
     page_size: int
     items: list
+
+
+class LeadSubset(BaseModel):
+    """Optional list of lead ids to target an action at a selected subset."""
+    lead_ids: list[uuid.UUID] | None = None

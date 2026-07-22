@@ -134,6 +134,13 @@
     z-index: 1;
   }
 
+  /* The Machine — dotted-grid canvas behind the pipeline node-graph */
+  .machine-canvas {
+    background-color: #f4f5fb;
+    background-image: radial-gradient(#d4d8ec 1.2px, transparent 1.2px);
+    background-size: 22px 22px;
+  }
+
   /* Live agent status dot */
   .live-dot {
     @apply inline-block h-2 w-2 rounded-full bg-trax9-cyan;

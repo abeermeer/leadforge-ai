@@ -314,12 +314,13 @@ def create_audit_task_row(db: Session, campaign: Campaign, total_items: int) -> 
     return row
 
 
-def eligible_audit_leads(db: Session, campaign: Campaign) -> list[Lead]:
-    return (
-        db.query(Lead)
-        .filter(Lead.campaign_id == campaign.id, Lead.status.in_(AUDITABLE_STATUSES))
-        .all()
+def eligible_audit_leads(db: Session, campaign: Campaign, lead_ids: list | None = None) -> list[Lead]:
+    q = db.query(Lead).filter(
+        Lead.campaign_id == campaign.id, Lead.status.in_(AUDITABLE_STATUSES)
     )
+    if lead_ids:
+        q = q.filter(Lead.id.in_(lead_ids))
+    return q.all()
 
 
 @celery_app.task
