@@ -30,6 +30,7 @@ class UserOut(BaseModel):
     name: str
     plan: str
     monthly_email_quota: int
+    email_verified: bool = False
     created_at: datetime
 
 

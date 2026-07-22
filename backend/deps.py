@@ -7,12 +7,17 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 from sqlalchemy.orm import Session
 
+from fastapi import Request
+
 from config import settings
 from crypto import decrypt_dict
 from database import SessionLocal
 from models import User, UserSettings
 
 _bearer = HTTPBearer(auto_error=False)
+
+# Name of the httpOnly auth cookie (audit 1.5).
+COOKIE_NAME = "lf_access"
 
 
 def get_db() -> Generator[Session, None, None]:
@@ -24,6 +29,7 @@ def get_db() -> Generator[Session, None, None]:
 
 
 def get_current_user(
+    request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
     db: Session = Depends(get_db),
 ) -> User:
@@ -32,11 +38,17 @@ def get_current_user(
         detail="Not authenticated",
         headers={"WWW-Authenticate": "Bearer"},
     )
-    if credentials is None:
+    # An explicit Authorization header wins (API clients / tests); browsers send
+    # no header and authenticate via the httpOnly cookie.
+    if credentials is not None:
+        token = credentials.credentials
+    else:
+        token = request.cookies.get(COOKIE_NAME)
+    if not token:
         raise unauthorized
     try:
         payload = jwt.decode(
-            credentials.credentials, settings.SECRET_KEY, algorithms=[settings.JWT_ALGORITHM]
+            token, settings.SECRET_KEY, algorithms=[settings.JWT_ALGORITHM]
         )
         user_id = payload.get("sub")
         if user_id is None:

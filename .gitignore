@@ -47,3 +47,4 @@ backend/setup_account.py
 # Scraper login session (holds cookies)
 backend/scraper_session.json
 scraper_session.json
+test_leadforge.db

@@ -29,6 +29,20 @@ def _ai_key(settings_row: UserSettings, keys: dict) -> tuple[str, str]:
     return provider, keys.get(provider)
 
 
+def require_verified(user: User) -> None:
+    """Block outbound sending until the account's email is verified (audit 1.5).
+
+    Bypassed in DEBUG so local testing works without an email channel.
+    """
+    from config import settings as _cfg
+
+    if not _cfg.DEBUG and not getattr(user, "email_verified", False):
+        raise HTTPException(
+            status_code=403,
+            detail="Verify your email before sending outreach (Settings → verify).",
+        )
+
+
 def _agency_services(db: Session, user_id) -> list:
     p = (
         db.query(AgencyProfile)
@@ -116,6 +130,7 @@ def send_lead_email(
     db: Session = Depends(get_db),
 ):
     """Generate (if needed) and send this lead's email; schedule follow-ups on success."""
+    require_verified(user)
     lead = _get_lead(db, user, lead_id)
     sendgrid_key = keys.get("sendgrid")
     if not sendgrid_key:

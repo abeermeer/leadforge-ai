@@ -46,7 +46,12 @@ def _verify_sendgrid_signature(raw_body: bytes, request: Request) -> None:
     """
     key = settings.SENDGRID_WEBHOOK_VERIFICATION_KEY
     if not key:
-        logger.warning("SENDGRID_WEBHOOK_VERIFICATION_KEY unset — skipping signature check (dev)")
+        # Fail CLOSED in production: an unset key must not silently accept
+        # unsigned webhooks (same insecure-default shape as the secret checks).
+        if not settings.DEBUG:
+            logger.warning("SENDGRID_WEBHOOK_VERIFICATION_KEY unset in production — rejecting webhook")
+            raise HTTPException(status_code=401, detail="Webhook verification not configured")
+        logger.warning("SENDGRID_WEBHOOK_VERIFICATION_KEY unset — skipping signature check (dev only)")
         return
     from sendgrid.helpers.eventwebhook import EventWebhook, EventWebhookHeader
 

@@ -147,3 +147,108 @@ def test_prod_boot_refuses_default_secret(monkeypatch):
 
     with pytest.raises(RuntimeError):
         main_module._assert_production_secrets()
+
+
+# ------------------------------------------------------------------ SEC-B (cookie auth, verify gate, GDPR)
+
+def test_login_sets_httponly_cookie():
+    """Login must plant the httpOnly session cookie so browsers can auth without a header."""
+    email = "cookie@t.co"
+    r = client.post("/api/register", json={"email": email, "password": "password123", "name": "C"})
+    if r.status_code == 409:
+        r = client.post("/api/login", json={"email": email, "password": "password123"})
+    # httpx exposes Set-Cookie via the response cookies jar.
+    assert "lf_access" in r.cookies
+    # And the raw header carries HttpOnly (not visible to JS).
+    setc = r.headers.get("set-cookie", "")
+    assert "httponly" in setc.lower()
+
+
+def test_cookie_authenticates_without_bearer():
+    """A fresh client that only holds the cookie (no Authorization header) is authenticated."""
+    from fastapi.testclient import TestClient as _TC
+
+    c = _TC(app)
+    email = "cookieauth@t.co"
+    r = c.post("/api/register", json={"email": email, "password": "password123", "name": "C"})
+    if r.status_code == 409:
+        r = c.post("/api/login", json={"email": email, "password": "password123"})
+    # The TestClient now carries lf_access; /api/me with NO bearer must still 200.
+    assert c.get("/api/me").status_code == 200
+
+
+def test_logout_clears_cookie():
+    from fastapi.testclient import TestClient as _TC
+
+    c = _TC(app)
+    email = "logout@t.co"
+    r = c.post("/api/register", json={"email": email, "password": "password123", "name": "L"})
+    if r.status_code == 409:
+        r = c.post("/api/login", json={"email": email, "password": "password123"})
+    assert c.get("/api/me").status_code == 200
+    c.post("/api/logout")
+    # Cookie dropped -> unauthenticated.
+    assert c.get("/api/me").status_code == 401
+
+
+def test_logout_everywhere_revokes_existing_tokens():
+    """Bumping token_version via /logout-everywhere invalidates a previously-minted bearer."""
+    email = "logoutall@t.co"
+    r = client.post("/api/register", json={"email": email, "password": "password123", "name": "L"})
+    if r.status_code == 409:
+        r = client.post("/api/login", json={"email": email, "password": "password123"})
+    token = r.json()["access_token"]
+    auth = {"Authorization": f"Bearer {token}"}
+    assert client.get("/api/me", headers=auth).status_code == 200
+    assert client.post("/api/logout-everywhere", headers=auth).status_code == 200
+    # Old bearer no longer valid.
+    assert client.get("/api/me", headers=auth).status_code == 401
+
+
+def test_email_verification_flow():
+    """request-verification returns a link; hitting /verify/{token} flips email_verified."""
+    email = "verify@t.co"
+    r = client.post("/api/register", json={"email": email, "password": "password123", "name": "V"})
+    if r.status_code == 409:
+        r = client.post("/api/login", json={"email": email, "password": "password123"})
+    auth = {"Authorization": f"Bearer {r.json()['access_token']}"}
+
+    body = client.post("/api/request-verification", headers=auth).json()
+    # Fresh user -> a link is issued; on a reused test DB the user may already be
+    # verified (idempotent), in which case there's no link and we just assert state.
+    if "verification_link" in body:
+        token = body["verification_link"].rstrip("/").split("/")[-1]
+        assert client.get(f"/api/verify/{token}").status_code == 200
+
+    from database import SessionLocal
+    from models import User
+
+    db = SessionLocal()
+    u = db.query(User).filter(User.email == email).first()
+    verified = bool(u.email_verified)
+    db.close()
+    assert verified is True
+
+
+def test_delete_account_purges_user(monkeypatch):
+    """GDPR erase: DELETE /account removes the user and their owned rows."""
+    email = "gdpr@t.co"
+    r = client.post("/api/register", json={"email": email, "password": "password123", "name": "G"})
+    if r.status_code == 409:
+        r = client.post("/api/login", json={"email": email, "password": "password123"})
+    token = r.json()["access_token"]
+    auth = {"Authorization": f"Bearer {token}"}
+
+    # Seed a campaign so cascade delete has something to purge.
+    client.post("/api/campaigns", headers=auth, json={"name": "to-erase"})
+    assert client.request("DELETE", "/api/account", headers=auth).status_code in (200, 204)
+
+    from database import SessionLocal
+    from models import User
+
+    db = SessionLocal()
+    gone = db.query(User).filter(User.email == email).first()
+    db.close()
+    assert gone is None
+    # The revoked token can no longer authenticate.
+    assert client.get("/api/me", headers=auth).status_code == 401

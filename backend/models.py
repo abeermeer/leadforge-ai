@@ -141,6 +141,9 @@ class User(Base):
     monthly_email_quota: Mapped[int] = mapped_column(Integer, default=1000)
     # Bumped to invalidate all outstanding JWTs (logout-everywhere / password change).
     token_version: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    # Email verification (audit 1.5) — sending is blocked until verified.
+    email_verified: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    email_verified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
 
     settings: Mapped["UserSettings"] = relationship(back_populates="user", uselist=False)
@@ -296,6 +299,7 @@ class Suppression(Base):
     email: Mapped[str] = mapped_column(String(320))
     reason: Mapped[SuppressionReason] = mapped_column(Enum(SuppressionReason))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_now, onupdate=_now)
 
 
 class Task(Base):

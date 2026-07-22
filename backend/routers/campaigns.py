@@ -537,8 +537,10 @@ def send_campaign_endpoint(
 ):
     """Send all written/eligible leads: enqueue send fan-out, or run inline if Redis down."""
     from config import settings as _cfg
+    from routers.leads import require_verified
     from tasks.send_tasks import send_campaign_emails, send_one
 
+    require_verified(user)
     campaign = _get_campaign(db, user, campaign_id)
     if not keys.get("sendgrid"):
         raise HTTPException(status_code=400, detail="Configure your SendGrid API key in Settings first")

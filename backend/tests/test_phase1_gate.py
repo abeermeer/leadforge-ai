@@ -32,6 +32,9 @@ def test_register_login_me():
 
 
 def test_me_requires_auth():
+    # A prior test may have left an auth cookie on the shared client; a genuine
+    # no-credentials request must clear it first.
+    client.cookies.clear()
     assert client.get("/api/me").status_code == 401
 
 
