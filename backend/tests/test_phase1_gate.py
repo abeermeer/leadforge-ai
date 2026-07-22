@@ -62,10 +62,14 @@ def test_settings_encrypt_and_mask():
     assert "abcdef123456" not in str(body)
     assert body["from_email"] == "ayesha@trax9.com"
 
-    # Stored encrypted at rest
+    # Stored encrypted at rest — read from whichever sqlite file the app is
+    # actually configured to use (trax9_dev.db locally, ci.db / test DB in CI).
     import sqlite3
 
-    con = sqlite3.connect("trax9_dev.db")
+    from config import settings
+
+    db_path = settings.DATABASE_URL.split("///", 1)[-1] if "sqlite" in settings.DATABASE_URL else "trax9_dev.db"
+    con = sqlite3.connect(db_path)
     blob = con.execute("SELECT encrypted_keys FROM user_settings").fetchone()[0]
     assert blob is not None
     assert b"SG.fake" not in blob  # ciphertext, not plaintext
