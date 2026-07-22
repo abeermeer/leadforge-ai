@@ -127,7 +127,9 @@ def check_rate_limit(user_id, settings_row: UserSettings) -> tuple[bool, str]:
     """Whether a send is allowed right now for this user (Redis-backed limits).
 
     Checks in order, first failure short-circuits:
-      1. Send window: current UTC hour in [send_start_hour, send_end_hour).
+      1. Send window: current UTC hour in [send_start_hour, send_end_hour]
+         (inclusive both ends — send_end_hour is capped at 23, so an exclusive
+         upper bound would make the 23:00 hour permanently unsendable).
       2. Hourly:  sent this hour < max_emails_per_hour.
       3. Daily:   sent today     < effective_daily_cap().
 
@@ -140,8 +142,8 @@ def check_rate_limit(user_id, settings_row: UserSettings) -> tuple[bool, str]:
     """
     now = datetime.utcnow()
     start = settings_row.send_start_hour if settings_row.send_start_hour is not None else 0
-    end = settings_row.send_end_hour if settings_row.send_end_hour is not None else 24
-    if not (start <= now.hour < end):
+    end = settings_row.send_end_hour if settings_row.send_end_hour is not None else 23
+    if not (start <= now.hour <= end):
         return False, f"outside send window {start:02d}:00-{end:02d}:00 UTC (now {now.hour:02d}:00)"
 
     client = _redis()
