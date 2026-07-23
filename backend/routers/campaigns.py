@@ -197,6 +197,28 @@ def delete_campaign(
 # ------------------------------------------------------------------ discovery
 
 
+# The two API-backed discovery sources are INDEPENDENT: Google Places needs only
+# `google_places`, Custom Search needs `google_custom_search` + its `_cx`. Each
+# returns [] (log-warn, no raise) when its own key is absent, so with neither key
+# configured discovery "succeeds" having searched nothing — which reads to the
+# operator as a silent failure. Name the usable sources up front instead.
+NO_DISCOVERY_SOURCE_DETAIL = (
+    "No discovery source configured. Add a Google Places key, or a Google Custom "
+    "Search key together with its CX (search-engine ID), in Settings — without one "
+    "of those there is nothing for Discovery to search."
+)
+
+
+def _discovery_sources(keys: dict) -> list[str]:
+    """Which discovery sources this user can actually run right now."""
+    sources = []
+    if keys.get("google_places"):
+        sources.append("google_places")
+    if keys.get("google_custom_search") and keys.get("google_custom_search_cx"):
+        sources.append("google_custom_search")
+    return sources
+
+
 @router.post("/campaigns/{campaign_id}/discover")
 def discover_campaign(
     campaign_id: uuid.UUID,
@@ -214,6 +236,11 @@ def discover_campaign(
             status_code=400,
             detail="Campaign needs seed keywords and target locations before discovery",
         )
+
+    # Fail loudly rather than "completing" a search over zero sources.
+    sources = _discovery_sources(keys)
+    if not sources:
+        raise HTTPException(status_code=400, detail=NO_DISCOVERY_SOURCE_DETAIL)
 
     # First agent deployed — campaign is now live, not a draft.
     campaign.status = CampaignStatus.running
@@ -290,8 +317,17 @@ def discover_campaign(
         logger.warning("broker still down — email finding skipped for %s", campaign.id)
 
     return {
-        "detail": "Discovery ran inline (queue unavailable)",
+        "detail": (
+            f"Discovery ran inline and found {new_leads} lead(s)"
+            if new_leads
+            else (
+                "Discovery ran but found no businesses. Try broader keywords or a "
+                f"wider location — sources searched: {', '.join(sources)}."
+            )
+        ),
         "mode": "inline",
+        "no_op": new_leads == 0,
+        "sources": sources,
         "new_leads": new_leads,
         "task_id": str(task_row.id),
     }
@@ -482,25 +518,40 @@ def autopilot_endpoint(
     db.commit()
     steps = {}
 
-    # 1. Discovery (best-effort; needs Google keys). Skips cleanly without them.
+    # 1. Discovery. Each source runs only if ITS OWN key exists — gating both
+    # behind Custom Search meant a Places-only account silently skipped discovery
+    # entirely, and the response never said so.
     kws = [k for k in (campaign.seed_keywords or []) if k]
     locs = [loc for loc in (campaign.target_locations or []) if loc]
-    if kws and locs and keys.get("google_custom_search") and keys.get("google_custom_search_cx"):
-        task_row = create_discovery_task_row(db, campaign, total_items=len(kws) * len(locs) * 2)
+    sources = _discovery_sources(keys)
+
+    if not kws or not locs:
+        steps["discovery_skipped"] = "campaign has no seed keywords or target locations"
+    elif not sources:
+        steps["discovery_skipped"] = NO_DISCOVERY_SOURCE_DETAIL
+    else:
+        task_row = create_discovery_task_row(
+            db, campaign, total_items=len(kws) * len(locs) * len(sources)
+        )
         batches = []
         for kw in kws:
             for loc in locs:
-                try:
-                    batches.append(asyncio.run(search_places(kw, loc, api_key=keys.get("google_places"))))
-                except Exception:
-                    pass
-                try:
-                    batches.append(asyncio.run(search_google(
-                        kw, loc, api_key=keys.get("google_custom_search"),
-                        cx=keys.get("google_custom_search_cx"))))
-                except Exception:
-                    pass
+                if "google_places" in sources:
+                    try:
+                        batches.append(
+                            asyncio.run(search_places(kw, loc, api_key=keys["google_places"]))
+                        )
+                    except Exception:
+                        logger.exception("autopilot google_maps failed for '%s' in '%s'", kw, loc)
+                if "google_custom_search" in sources:
+                    try:
+                        batches.append(asyncio.run(search_google(
+                            kw, loc, api_key=keys["google_custom_search"],
+                            cx=keys["google_custom_search_cx"])))
+                    except Exception:
+                        logger.exception("autopilot google_search failed for '%s' in '%s'", kw, loc)
         steps["discovered"] = save_leads_for_campaign(db, campaign, batches)
+        steps["sources"] = sources
         task_row.completed_items = task_row.total_items
         task_row.status = TaskStatus.completed
         db.commit()
@@ -520,6 +571,16 @@ def autopilot_endpoint(
     # 3. Write copy for everything now scored.
     written, _ = _write_for_leads(db, user, campaign, keys, settings_row)
     steps["written"] = written
+
+    # A run where every stage was a no-op looks like a dead button. Say so.
+    did_nothing = (
+        not steps.get("discovered") and not steps.get("audited") and not steps.get("written")
+    )
+    if did_nothing:
+        detail = steps.get("discovery_skipped") or (
+            "Nothing to do — no leads to audit or write. Run Discovery first."
+        )
+        return {"detail": detail, "mode": "inline", "no_op": True, **steps}
 
     return {"detail": "Autopilot complete", "mode": "inline", **steps}
 

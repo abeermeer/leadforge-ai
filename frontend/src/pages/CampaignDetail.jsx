@@ -94,6 +94,10 @@ export default function CampaignDetail() {
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [error, setError] = useState('');
+  // Separate from `error` on purpose: fetchCore() clears `error` on every
+  // successful refresh, which would wipe a "nothing happened, here's why"
+  // message the moment the post-trigger refetch lands.
+  const [notice, setNotice] = useState('');
   const [actionBusy, setActionBusy] = useState(''); // 'discover'|'audit'|'write'|'autopilot'|'audit-sel'|'write-sel'
   const [selected, setSelected] = useState(new Set()); // selected lead ids
 
@@ -217,10 +221,18 @@ export default function CampaignDetail() {
   const trigger = async (kind, body) => {
     setActionBusy(kind);
     setError('');
+    setNotice('');
     try {
-      await api.post(`/campaigns/${id}/${kind}`, body);
+      const res = await api.post(`/campaigns/${id}/${kind}`, body);
+      const data = (res && res.data) || {};
       if (aliveRef.current) setSelected(new Set());
       await fetchCore();
+      // Set AFTER the refetch — fetchCore clears banners on success.
+      // A 200 where every stage was a no-op (no discovery source, no leads,
+      // nothing found) otherwise looks like a dead button.
+      if (aliveRef.current && (data.no_op || data.discovery_skipped)) {
+        setNotice(String(data.detail || data.discovery_skipped));
+      }
     } catch (err) {
       const detail =
         err.response && err.response.data && err.response.data.detail
@@ -316,6 +328,13 @@ export default function CampaignDetail() {
       {error && (
         <div className="rounded-lg border border-trax9-red/40 bg-trax9-red/10 px-4 py-3 text-sm text-trax9-red">
           {error}
+        </div>
+      )}
+
+      {notice && (
+        <div className="flex items-start gap-2 rounded-lg border border-[#f59e0b]/45 bg-[#f59e0b]/10 px-4 py-3 text-sm text-[#92400e]">
+          <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+          <span>{notice}</span>
         </div>
       )}
 
