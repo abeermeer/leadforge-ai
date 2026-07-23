@@ -92,7 +92,7 @@ function BrandPanel() {
 }
 
 export default function Login() {
-  const { token, login, register } = useAuth();
+  const { authed, login, register } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -103,7 +103,7 @@ export default function Login() {
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
-  if (token) {
+  if (authed) {
     return <Navigate to="/" replace />;
   }
 

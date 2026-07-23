@@ -36,6 +36,15 @@ def _assert_production_secrets() -> None:
         problems.append("SECRET_KEY is still the public default")
     if not settings.FERNET_KEY:
         problems.append("FERNET_KEY is empty (secrets would use a key derived from SECRET_KEY)")
+    if not settings.SENDGRID_WEBHOOK_VERIFICATION_KEY:
+        # The webhook endpoint already fails CLOSED without this key, so a
+        # misconfigured deploy silently 401s every SendGrid event — dropping
+        # opens, bounces and unsubscribes (a compliance failure, not just a
+        # missing metric). Catch it at boot instead.
+        problems.append(
+            "SENDGRID_WEBHOOK_VERIFICATION_KEY is empty "
+            "(event webhooks would be rejected — opens/bounces/unsubscribes lost)"
+        )
     if problems:
         raise RuntimeError(
             "Refusing to start in production with insecure secrets: "

@@ -149,6 +149,24 @@ def test_prod_boot_refuses_default_secret(monkeypatch):
         main_module._assert_production_secrets()
 
 
+def test_prod_boot_requires_webhook_verification_key(monkeypatch):
+    """Real secrets but no webhook key must still refuse to boot: the webhook
+    fails closed, so an unset key silently drops every open/bounce/unsubscribe."""
+    import config as config_module
+
+    monkeypatch.setattr(config_module.settings, "DEBUG", False)
+    monkeypatch.setattr(config_module.settings, "SECRET_KEY", "a-real-non-default-secret")
+    monkeypatch.setattr(
+        config_module.settings, "FERNET_KEY", "NnqnTIDsmStD-diXZmHUQAVF3SUa90nm5zOLQC79xyA="
+    )
+    monkeypatch.setattr(config_module.settings, "SENDGRID_WEBHOOK_VERIFICATION_KEY", "")
+
+    import main as main_module
+
+    with pytest.raises(RuntimeError, match="SENDGRID_WEBHOOK_VERIFICATION_KEY"):
+        main_module._assert_production_secrets()
+
+
 # ------------------------------------------------------------------ SEC-B (cookie auth, verify gate, GDPR)
 
 def test_login_sets_httponly_cookie():

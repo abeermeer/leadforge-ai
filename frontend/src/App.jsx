@@ -29,18 +29,22 @@ function BootScreen({ line = 'AUTHENTICATING' }) {
 }
 
 /**
- * Auth wall: no token -> /login. While the token is being exchanged
- * for an identity, hold on the boot screen.
+ * Auth wall: no valid session cookie -> /login.
+ *
+ * Order matters: the session lives in an httpOnly cookie the JS can't read, so
+ * `authed` is false until the boot `/me` probe resolves. Hold on the boot
+ * screen while `loading`, otherwise a logged-in operator is bounced to /login
+ * on every refresh.
  */
 function RequireAuth() {
-  const { token, loading } = useAuth();
+  const { authed, loading } = useAuth();
   const location = useLocation();
 
-  if (!token) {
-    return <Navigate to="/login" replace state={{ from: location }} />;
-  }
   if (loading) {
     return <BootScreen line="AUTHENTICATING" />;
+  }
+  if (!authed) {
+    return <Navigate to="/login" replace state={{ from: location }} />;
   }
   return <ProfileGate />;
 }
