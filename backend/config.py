@@ -81,6 +81,22 @@ class Settings(BaseSettings):
     # CORS — comma-separated allowed origins for the browser frontend.
     ALLOWED_ORIGINS: str = "http://localhost:3000,http://localhost:5173,http://127.0.0.1:5173"
 
+    # Data retention (privacy 4.2). Lead + email-log rows older than this are
+    # auto-purged by the nightly `purge_expired_data` beat job. Suppressions are
+    # NEVER purged — they are the permanent do-not-contact record.
+    RETENTION_MONTHS: int = 24
+    RETENTION_PURGE_ENABLED: bool = True
+
+    # Deliverability alerting (ops 3.2). Thresholds evaluated over a trailing
+    # window by the `check_deliverability_alerts` beat job.
+    ALERT_BOUNCE_RATE_PCT: float = 3.0     # ESPs start throttling well before 5%
+    ALERT_SPAM_REPORT_MAX: int = 0         # any spam complaint is worth knowing
+    ALERT_QUEUE_DEPTH_MAX: int = 500       # celery backlog
+    ALERT_WINDOW_HOURS: int = 24
+    ALERT_MIN_SAMPLE: int = 20             # don't alert on 1-of-2 bounces
+    # Where alerts go. Empty -> log-only (still reaches Sentry via ERROR level).
+    ALERT_EMAIL: str = ""
+
     @property
     def allowed_origins_list(self) -> list[str]:
         return [o.strip() for o in self.ALLOWED_ORIGINS.split(",") if o.strip()]

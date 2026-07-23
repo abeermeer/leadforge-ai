@@ -143,8 +143,11 @@ def _followup_body(step: int, lead) -> str:
     )
 
 
-celery_app.conf.beat_schedule = {
-    "raise-warmup-caps": {"task": "tasks.sequence_tasks.raise_warmup_caps", "schedule": crontab(hour=0, minute=5)},
-    "run-due-sequences": {"task": "tasks.sequence_tasks.run_due_sequences", "schedule": crontab(minute="*/15")},
-    "poll-all-replies": {"task": "tasks.sequence_tasks.poll_all_replies", "schedule": crontab(minute="*/5")},
-}
+# .update() — tasks.ops_tasks adds its own entries; reassigning would drop them.
+celery_app.conf.beat_schedule.update(
+    {
+        "raise-warmup-caps": {"task": "tasks.sequence_tasks.raise_warmup_caps", "schedule": crontab(hour=0, minute=5)},
+        "run-due-sequences": {"task": "tasks.sequence_tasks.run_due_sequences", "schedule": crontab(minute="*/15")},
+        "poll-all-replies": {"task": "tasks.sequence_tasks.poll_all_replies", "schedule": crontab(minute="*/5")},
+    }
+)

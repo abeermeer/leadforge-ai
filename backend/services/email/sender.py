@@ -30,10 +30,12 @@ import logging
 import time
 from datetime import datetime
 
+from sqlalchemy import func, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from config import settings
+from services.email.identity import hash_email, normalize_email
 from models import (
     EmailLog,
     EmailLogStatus,
@@ -251,9 +253,26 @@ def _html_body(email_body: str, footer_html: str) -> str:
 
 
 def _is_suppressed(db: Session, user_id, email: str) -> bool:
+    """Has this address opted out?
+
+    Matching is CASE-INSENSITIVE and also checks the hashed column. A lead
+    re-discovered as `Owner@Acme.com` must still match a suppression stored as
+    `owner@acme.com` — an exact-case comparison silently re-mails people who
+    unsubscribed (CAN-SPAM violation). Hash matching keeps erased contacts
+    (privacy purge) suppressed after their plaintext address is removed.
+    """
+    norm = normalize_email(email)
+    if not norm:
+        return False
     return (
         db.query(Suppression)
-        .filter(Suppression.user_id == user_id, Suppression.email == email)
+        .filter(
+            Suppression.user_id == user_id,
+            or_(
+                func.lower(Suppression.email) == norm,
+                Suppression.email_hash == hash_email(norm),
+            ),
+        )
         .first()
         is not None
     )
@@ -261,9 +280,14 @@ def _is_suppressed(db: Session, user_id, email: str) -> bool:
 
 def _add_suppression(db: Session, user_id, email: str, reason: SuppressionReason) -> None:
     """Insert a suppression row, ignoring the unique (user_id, email) collision."""
-    if _is_suppressed(db, user_id, email):
+    norm = normalize_email(email)
+    if not norm or _is_suppressed(db, user_id, norm):
         return
-    db.add(Suppression(user_id=user_id, email=email, reason=reason))
+    db.add(
+        Suppression(
+            user_id=user_id, email=norm, email_hash=hash_email(norm), reason=reason
+        )
+    )
     try:
         db.commit()
     except IntegrityError:

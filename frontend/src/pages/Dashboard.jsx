@@ -13,6 +13,7 @@ import { Users, ScanSearch, PenLine, Send, Radar, Plus } from 'lucide-react';
 import { format, formatDistanceToNow, startOfDay, subDays } from 'date-fns';
 import api from '../api/client';
 import PipelineRail from '../components/PipelineRail';
+import DeliverabilityPanel from '../components/DeliverabilityPanel';
 import ActivityFeed from '../components/ActivityFeed';
 import StatCard from '../components/StatCard';
 import StatusBadge from '../components/StatusBadge';
@@ -230,6 +231,9 @@ export default function Dashboard() {
             </div>
             <PipelineRail compact tasks={data.tasks} statusCounts={statusCounts} />
           </div>
+
+          {/* Deliverability — the numbers that decide whether sending survives */}
+          <DeliverabilityPanel />
 
           {/* Chart + Activity feed */}
           <div className="grid gap-4 lg:grid-cols-3">

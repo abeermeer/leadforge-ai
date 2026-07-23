@@ -70,7 +70,16 @@ def test_settings_encrypt_and_mask():
 
     db_path = settings.DATABASE_URL.split("///", 1)[-1] if "sqlite" in settings.DATABASE_URL else "trax9_dev.db"
     con = sqlite3.connect(db_path)
-    blob = con.execute("SELECT encrypted_keys FROM user_settings").fetchone()[0]
+    # Scope to THIS test's user. An unfiltered SELECT picks an arbitrary row, so
+    # any other test that registers a user without saving settings (NULL blob)
+    # makes this fail depending on row order.
+    row = con.execute(
+        "SELECT s.encrypted_keys FROM user_settings s "
+        "JOIN users u ON u.id = s.user_id WHERE u.email = ?",
+        (EMAIL,),
+    ).fetchone()
+    assert row is not None, "settings row for the test user is missing"
+    blob = row[0]
     assert blob is not None
     assert b"SG.fake" not in blob  # ciphertext, not plaintext
 

@@ -12,6 +12,7 @@ from database import Base, engine
 from routers import auth as auth_router
 from routers import campaigns as campaigns_router
 from routers import leads as leads_router
+from routers import ops as ops_router
 from routers import profile as profile_router
 from routers import settings as settings_router
 from routers import webhooks as webhooks_router
@@ -129,5 +130,6 @@ app.include_router(profile_router.router, prefix="/api", tags=["profile"])
 app.include_router(campaigns_router.router, prefix="/api", tags=["campaigns"])
 app.include_router(leads_router.router, prefix="/api", tags=["leads"])
 app.include_router(webhooks_router.router, prefix="/api", tags=["webhooks"])
+app.include_router(ops_router.router, prefix="/api", tags=["ops"])
 
 setup_observability(app)

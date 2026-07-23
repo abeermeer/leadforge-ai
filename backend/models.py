@@ -269,6 +269,9 @@ class EmailLog(Base):
     opened_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     replied_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     bounce_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Row birth time. sent_at only exists once SendGrid accepts, so queued and
+    # dropped rows would otherwise have no timestamp to age out or chart by.
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now, index=True)
 
 
 class SequenceStep(Base):
@@ -296,7 +299,10 @@ class Suppression(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=_uuid)
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
+    # Plaintext address. A privacy purge blanks this but KEEPS email_hash, so the
+    # person stays suppressed after their personal data is erased.
     email: Mapped[str] = mapped_column(String(320))
+    email_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     reason: Mapped[SuppressionReason] = mapped_column(Enum(SuppressionReason))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=_now, onupdate=_now)

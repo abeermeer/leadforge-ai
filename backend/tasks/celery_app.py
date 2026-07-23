@@ -38,8 +38,12 @@ celery_app.autodiscover_tasks(
         "tasks.send_tasks",
         "tasks.profile_tasks",
         "tasks.sequence_tasks",
+        "tasks.ops_tasks",
     ]
 )
 
-# Beat schedule is populated by tasks.sequence_tasks at import time.
+celery_app.conf.task_routes["tasks.ops_tasks.*"] = {"queue": "email"}
+
+# Beat schedule is populated by tasks.sequence_tasks and tasks.ops_tasks at
+# import time — both must .update() it, never reassign, or one clobbers the other.
 celery_app.conf.beat_schedule = {}
