@@ -27,8 +27,11 @@ jobs:
           pip install -r requirements.txt
       - name: Migrate
         run: alembic upgrade head
-      - name: Tests
-        run: pytest -q
+      - name: Tests (with coverage gate)
+        # Threshold sits just under the current app-only figure so the gate
+        # catches a real regression without failing on noise. Ratchet it up as
+        # coverage grows; never lower it to make a red build pass.
+        run: pytest -q --cov --cov-report=term-missing --cov-fail-under=55
       - name: Dependency audit (non-blocking)
         run: pip install pip-audit && pip-audit || true
 

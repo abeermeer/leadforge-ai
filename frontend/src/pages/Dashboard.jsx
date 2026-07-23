@@ -10,7 +10,7 @@ import {
   YAxis,
 } from 'recharts';
 import { Users, ScanSearch, PenLine, Send, Radar, Plus } from 'lucide-react';
-import { format, formatDistanceToNow, startOfDay, subDays } from 'date-fns';
+import { format, formatDistanceToNow } from 'date-fns';
 import api from '../api/client';
 import PipelineRail from '../components/PipelineRail';
 import DeliverabilityPanel from '../components/DeliverabilityPanel';
@@ -52,37 +52,33 @@ export default function Dashboard() {
   const aliveRef = useRef(true);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [data, setData] = useState({ campaigns: [], leads: [], tasks: [], totalLeads: 0 });
+  const [data, setData] = useState({
+    campaigns: 0,
+    totalLeads: 0,
+    statusCounts: {},
+    series: [],
+    recentLeads: [],
+    tasks: [],
+  });
 
+  /**
+   * ONE request. This used to fetch the campaign list and then leads + tasks
+   * for every campaign (1 + 2N requests) on a 5s poll — fine with two
+   * campaigns, pathological with fifty. The counts are now GROUP BY aggregates
+   * done in the database; only the rows actually rendered come back.
+   */
   const fetchAll = useCallback(async () => {
     try {
-      const res = await api.get('/campaigns', { params: { page: 1, page_size: 50 } });
-      const campaigns = res.data.items || [];
-
-      const perCampaign = await Promise.all(
-        campaigns.map((c) =>
-          Promise.all([
-            api.get(`/campaigns/${c.id}/leads`, { params: { page: 1, page_size: 100 } }),
-            api.get(`/campaigns/${c.id}/tasks`),
-          ]).catch(() => [{ data: { items: [], total: 0 } }, { data: [] }])
-        )
-      );
-
-      let leads = [];
-      let tasks = [];
-      let totalLeads = 0;
-      perCampaign.forEach(([leadRes, taskRes], i) => {
-        const items = (leadRes.data.items || []).map((l) => ({
-          ...l,
-          campaign_name: campaigns[i].name,
-        }));
-        leads = leads.concat(items);
-        totalLeads += Number(leadRes.data.total) || items.length;
-        tasks = tasks.concat(Array.isArray(taskRes.data) ? taskRes.data : []);
-      });
-
+      const { data: d } = await api.get('/dashboard', { params: { days: 30 } });
       if (aliveRef.current) {
-        setData({ campaigns, leads, tasks, totalLeads });
+        setData({
+          campaigns: Number(d.campaigns) || 0,
+          totalLeads: Number(d.total_leads) || 0,
+          statusCounts: d.status_counts || {},
+          series: d.series || [],
+          recentLeads: d.recent_leads || [],
+          tasks: d.tasks || [],
+        });
         setError('');
       }
     } catch {
@@ -109,49 +105,27 @@ export default function Dashboard() {
     return () => clearInterval(timer);
   }, [anyRunning, fetchAll]);
 
-  const statusCounts = useMemo(() => {
-    const counts = {};
-    data.leads.forEach((l) => {
-      if (!l.status) return;
-      counts[l.status] = (counts[l.status] || 0) + 1;
-    });
-    return counts;
-  }, [data.leads]);
+  // Counted server-side now (GROUP BY), not by tallying every lead row here.
+  const statusCounts = data.statusCounts;
 
   const audited = sumStatuses(statusCounts, AUDITED_PLUS);
   const written = sumStatuses(statusCounts, WRITTEN_PLUS);
   const sent = sumStatuses(statusCounts, SENT_PLUS);
   const replied = statusCounts.replied || 0;
 
-  // Leads created per day, last 30 days — computed client-side from created_at
-  const chartData = useMemo(() => {
-    const days = [];
-    const byKey = {};
-    const today = startOfDay(new Date());
-    for (let i = 29; i >= 0; i -= 1) {
-      const d = subDays(today, i);
-      const entry = { key: format(d, 'yyyy-MM-dd'), label: format(d, 'MMM d'), leads: 0 };
-      days.push(entry);
-      byKey[entry.key] = entry;
-    }
-    data.leads.forEach((l) => {
-      const d = safeDate(l.created_at);
-      if (!d) return;
-      const entry = byKey[format(d, 'yyyy-MM-dd')];
-      if (entry) entry.leads += 1;
-    });
-    return days;
-  }, [data.leads]);
+  // Series comes from the API already bucketed per day; only add display labels.
+  const chartData = useMemo(
+    () =>
+      (data.series || []).map((row) => ({
+        key: row.date,
+        label: format(new Date(`${row.date}T00:00:00`), 'MMM d'),
+        leads: Number(row.leads) || 0,
+      })),
+    [data.series]
+  );
 
-  const recentLeads = useMemo(() => {
-    return [...data.leads]
-      .sort((a, b) => {
-        const ad = safeDate(a.created_at);
-        const bd = safeDate(b.created_at);
-        return (bd ? bd.getTime() : 0) - (ad ? ad.getTime() : 0);
-      })
-      .slice(0, 8);
-  }, [data.leads]);
+  // Already ordered newest-first and limited server-side.
+  const recentLeads = data.recentLeads;
 
   if (loading) {
     return (
@@ -174,7 +148,7 @@ export default function Dashboard() {
           </div>
           <h1 className="text-xl font-semibold text-trax9-text">Mission Overview</h1>
           <p className="mt-0.5 text-sm text-trax9-muted">
-            {data.campaigns.length} campaign{data.campaigns.length === 1 ? '' : 's'} under
+            {data.campaigns} campaign{data.campaigns === 1 ? '' : 's'} under
             command
           </p>
         </div>
@@ -195,7 +169,7 @@ export default function Dashboard() {
         </div>
       )}
 
-      {data.campaigns.length === 0 ? (
+      {data.campaigns === 0 ? (
         <div className="space-y-4">
           <EmptyState
             icon={Radar}

@@ -249,6 +249,69 @@ def test_metrics_requires_auth():
     assert client.get("/api/metrics/summary").status_code == 401
 
 
+# --------------------------------------------------------- aggregate dashboard
+
+
+def test_dashboard_aggregates_in_one_call():
+    """One request must carry everything the Dashboard renders.
+
+    Replaces a 1 + 2N fan-out (campaign list, then leads + tasks per campaign)
+    that ran on a 5s poll.
+    """
+    auth = _auth()
+    db = SessionLocal()
+    u = _user(db)
+    c = Campaign(user_id=u.id, name=f"dash-{uuid.uuid4().hex[:6]}")
+    db.add(c)
+    db.flush()
+    for i in range(3):
+        db.add(
+            Lead(
+                user_id=u.id, campaign_id=c.id, company_name=f"D{i}",
+                website=f"d{i}-{uuid.uuid4().hex[:6]}.com", status=LeadStatus.discovered,
+            )
+        )
+    db.commit()
+    db.close()
+
+    r = client.get("/api/dashboard?days=30", headers=auth)
+    assert r.status_code == 200
+    body = r.json()
+
+    for key in ("campaigns", "total_leads", "status_counts", "series", "recent_leads", "tasks"):
+        assert key in body, f"missing {key}"
+
+    assert body["campaigns"] >= 1
+    assert body["total_leads"] >= 3
+    assert body["status_counts"].get("discovered", 0) >= 3
+    # Series covers the whole window and its counts reconcile with the total.
+    assert len(body["series"]) == 30
+    assert sum(row["leads"] for row in body["series"]) <= body["total_leads"]
+    # Recent leads carry the campaign name the table shows (no N+1 on the client).
+    if body["recent_leads"]:
+        assert "campaign_name" in body["recent_leads"][0]
+
+
+def test_dashboard_is_tenant_scoped():
+    """One operator's dashboard must not count another operator's leads."""
+    rb = client.post(
+        "/api/register", json={"email": "dashb@t.co", "password": PW, "name": "DB"}
+    )
+    if rb.status_code == 409:
+        rb = client.post("/api/login", json={"email": "dashb@t.co", "password": PW})
+    auth_b = {"Authorization": f"Bearer {rb.json()['access_token']}"}
+
+    body = client.get("/api/dashboard", headers=auth_b).json()
+    # Fresh operator sees only their own (empty) world.
+    assert body["total_leads"] == 0
+    assert body["campaigns"] == 0
+
+
+def test_dashboard_requires_auth():
+    client.cookies.clear()
+    assert client.get("/api/dashboard").status_code == 401
+
+
 # --------------------------------------------------------- atomic send-slot reservation
 
 

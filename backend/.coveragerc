@@ -1,0 +1,18 @@
+[run]
+source = .
+omit =
+    tests/*
+    .venv/*
+    alembic/*
+    demo_seed.py
+    setup_account.py
+    capture_session.py
+
+[report]
+# Lines that never run in a test process and would only depress the signal.
+exclude_lines =
+    pragma: no cover
+    if __name__ == .__main__.:
+    raise NotImplementedError
+    if TYPE_CHECKING:
+show_missing = True

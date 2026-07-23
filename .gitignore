@@ -48,3 +48,6 @@ backend/setup_account.py
 backend/scraper_session.json
 scraper_session.json
 test_leadforge.db
+.coverage
+coverage.xml
+htmlcov/
