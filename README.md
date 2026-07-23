@@ -9,7 +9,8 @@
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.110-009688?logo=fastapi&logoColor=white)
 ![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black)
 ![Celery](https://img.shields.io/badge/Celery-5.3-37814A?logo=celery&logoColor=white)
-![Tests](https://img.shields.io/badge/tests-50%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-53%20passing-brightgreen)
+![Coverage](https://img.shields.io/badge/coverage-58%25%20gated-informational)
 ![Security](https://img.shields.io/badge/SSRF%20%7C%20cookie%20auth%20%7C%20webhook%20auth%20%7C%20GDPR-hardened-blue)
 
 </div>
@@ -83,21 +84,39 @@ Each stage writes its result back before the next runs. A reply, unsubscribe, or
 | Scraping | httpx + BeautifulSoup · Playwright (ad libraries) w/ proxy rotation |
 | Deploy | Docker Compose · Railway / Fly.io |
 
+## Operations
+
+Sending is a reputation business — the numbers that decide whether it keeps working are visible, not buried:
+
+- **Deliverability metrics** — `GET /api/metrics/summary` returns sent / delivered / bounced / replied / spam as totals, a per-day series, and a per-campaign breakdown ordered worst-bounce-first. The dashboard panel turns amber at a 3% bounce rate and red at 5% — the thresholds where providers begin throttling.
+- **Alerting** — a scheduled job checks bounce rate, spam complaints, and Celery queue depth, alerting at `ERROR` level (captured by Sentry) and optionally by email. A minimum-sample floor stops one bounce in two reading as a 50% failure.
+- **Rate limits are enforced atomically** — a send slot is reserved with an atomic `INCR` before the message goes out and released if it doesn't, so concurrent workers cannot collectively overshoot the daily cap. Overshooting a warmup cap burns a domain permanently.
+- **Log correlation** — every request carries an `X-Request-ID`, threaded into each log line emitted while handling it, so a "it broke at 3pm" report is a lookup rather than a guess.
+
+## Privacy and data handling
+
+- **Erasure** — `POST /api/privacy/purge` removes an address from leads, email logs, sequence steps, and orphaned audit cache. The suppression record is **anonymised rather than deleted**, keeping a salted hash: erasing someone must never quietly make them contactable again.
+- **Retention** — lead and email-log rows are auto-purged after a configurable window (default 24 months). Suppressions are exempt as a permanent do-not-contact record.
+- **Account deletion** — `DELETE /account` erases the user and every owned row.
+- **Suppression is permanent and case-insensitive** — matching is normalised, so a contact re-imported as `Owner@Acme.com` cannot slip past an opt-out stored as `owner@acme.com`.
+
+Acceptable-use terms: [`docs/TERMS.md`](docs/TERMS.md).
+
 ## Security
 
-Hardened against a full production-readiness audit:
+Hardened across four independent production-readiness audits:
 
 - **SSRF guard** — every server-side fetch of a user URL resolves the host and rejects private/reserved IPs (blocks the cloud-metadata endpoint), re-validates each redirect hop, restricts the scheme, and caps response size.
 - **Webhook authentication** — SendGrid event-webhook ECDSA signature verification; inbound-parse gated behind a per-deploy path secret; both rate-limited.
 - **Secrets** — per-user API keys are Fernet-encrypted at rest and returned masked; the app **refuses to boot in production** on placeholder secrets.
 - **Rate limiting** — Redis-backed limits on auth, agency-analyze, and webhooks.
-- **Auth** — JWT delivered as an **httpOnly cookie** (never JavaScript-readable) with a Bearer fallback for API clients; server-side revocation (`token_version`), short expiry, `/logout` + `/logout-everywhere`; env-driven CORS; non-root container images.
+- **Auth** — the session is an **httpOnly cookie only**; the browser never holds a JavaScript-readable token, so an XSS payload cannot exfiltrate it. A Bearer header remains available for API clients. Server-side revocation (`token_version`), short expiry, `/logout` and `/logout-everywhere`; env-driven CORS; non-root container images.
 - **Email verification** — sending is gated behind a verified sender address (auto-bypassed in local `DEBUG`).
-- **Privacy / GDPR** — `DELETE /account` permanently erases the user and every owned row (leads, campaigns, logs, sequences, suppressions, settings).
-- **Webhooks fail closed** — in production, the SendGrid event webhook is rejected when no signature-verification key is configured.
-- **Compliance** — one-click unsubscribe + `List-Unsubscribe` header + postal address on every email; suppression list enforced before every send.
+- **Webhooks fail closed** — in production the SendGrid event webhook is rejected outright when no signature-verification key is configured, and the app refuses to boot without one: a silently unverified webhook drops every open, bounce, and unsubscribe.
+- **Compliance** — one-click unsubscribe + `List-Unsubscribe` header + postal address on every email; the suppression list is checked before every send, including follow-ups; a reply, bounce, or unsubscribe cancels the remaining sequence.
+- **Resource limits** — every container has a CPU and memory ceiling, so one runaway scrape cannot starve the database or API.
 
-Security regression tests (SSRF payloads, webhook auth + fail-closed, IDOR, token revocation, cookie auth, email-verify gate, GDPR erase, prod fail-fast) run in CI on every push.
+**53 tests** run in CI on every push behind a coverage gate. Security regressions covered: SSRF payloads, webhook auth and fail-closed behaviour, IDOR across tenants, token revocation, cookie-only auth, the email-verify gate, GDPR erasure, atomic rate-limit reservation under concurrency, and production boot refusal on placeholder secrets.
 
 ## Quick start
 
@@ -141,34 +160,49 @@ Ad-library and directory scraping need no key; add a `PROXY_POOL` to avoid IP ba
 
 ## Deliverability (before real sending volume)
 
-Send from a subdomain (e.g. `out.example.com`), never the corporate root. Configure **SPF**, **DKIM** (SendGrid domain auth), and **DMARC**. Warmup ramps from 10/day to the cap over days; bounces and spam reports auto-suppress.
+Send from a subdomain (e.g. `out.example.com`), never the corporate root — if outreach damages a domain's reputation, it should be one that doesn't also carry your invoices. Configure **SPF**, **DKIM** (SendGrid domain auth), and **DMARC**, starting DMARC at `p=none`; jumping straight to `p=reject` while misconfigured silently kills your own mail. Warmup ramps from 10/day to the cap over days; bounces and spam reports auto-suppress.
+
+Full sequence, including the DNS values and a results table to fill in: **[`docs/LIVE-FIRE-RUNBOOK.md`](docs/LIVE-FIRE-RUNBOOK.md)**.
 
 ## Project structure
 
 ```
 backend/
   main.py  config.py  crypto.py  deps.py  models.py  schemas.py
-  routers/        auth · settings · profile · campaigns · leads · webhooks
+  routers/        auth · settings · profile · campaigns · leads · webhooks · ops
   services/
     ai/           provider client (Anthropic / OpenAI / Gemini)
     profile/      agency brain
     discovery/    google_maps · google_search · directory · email_finder
     audit/        website · seo · meta_ads · google_ads · brand · scoring · social
-    email/        writer · sender · reply_tracker · sequencer
+    email/        writer · sender · reply_tracker · sequencer · identity
     net/          safe_http (SSRF guard)
-    ratelimit.py  obs.py
-  tasks/          celery app + discovery/audit/send/sequence tasks
-  tests/          39 tests (phase gates + security), external calls mocked
+    metrics.py    deliverability aggregation
+    privacy.py    erasure + retention
+    ratelimit.py  obs.py (request-id + Sentry)
+  tasks/          celery app + discovery/audit/send/sequence/ops tasks
+  tests/          53 tests (phase gates · security · privacy/ops), external calls mocked
 frontend/         React "The Machine" mission-control dashboard
-docs/             PRD, build plan, system-design, demo video
-.github/          CI (pytest + build + dependency audit)
+docs/             PRD · build plan · live-fire runbook · terms · demo video
+.github/          CI (pytest + coverage gate + build + dependency audit)
 ```
 
 ## Status
 
-Phases 1–6 complete · 50/50 tests green ([CI](https://github.com/abeermeer/leadforge-ai/actions/workflows/ci.yml)) · frontend builds clean · four production-readiness audits closed · live-verified against real websites (agency brain, email finder, SEO/brand audit, AI email writing).
+**Shipped and verified**
 
-**Not yet done:** no live send has happened. Deliverability, real-world scraper failure rates, and cost-per-lead are unverified until the [live-fire runbook](docs/LIVE-FIRE-RUNBOOK.md) is executed.
+| | |
+|---|---|
+| Build | Phases 1–6 complete · frontend builds clean |
+| Tests | 53 passing behind a coverage gate — [CI](https://github.com/abeermeer/leadforge-ai/actions/workflows/ci.yml) |
+| Audits | Four independent production-readiness audits closed |
+| Verified live | Agency brain, email finder, and SEO/brand audit run against real websites; AI email writing produces real copy |
+
+**Not yet verified — no email has ever been sent.**
+
+Every test mocks SendGrid, the AI providers, and the scrapers. The following are unknown until a real campaign runs: inbox placement and deliverability, Playwright's real-world failure rate on live sites, whether reply detection fires end to end, and cost per lead. Those are discoverable only by sending, not by reading code.
+
+The sequence to close that gap — DNS records, warmup rules, and the results to record — is in **[`docs/LIVE-FIRE-RUNBOOK.md`](docs/LIVE-FIRE-RUNBOOK.md)**.
 
 <div align="center">
 <sub>Built for the Trax9 agency. Proprietary.</sub>
