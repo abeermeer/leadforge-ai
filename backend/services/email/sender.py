@@ -5,12 +5,19 @@ time by the caller). Nothing here reads a global SendGrid key.
 
 Design notes:
 - **Rate-limit state lives in Redis, never in process globals** so counters are
-  correct across every worker and survive restarts. `check_rate_limit` reads the
-  hourly/daily counters (read-only); `send_email` increments them only after a
-  send is actually accepted by SendGrid, so a blocked or bounced attempt never
-  burns a slot. Keys `sent:{uid}:{YYYY-MM-DD-HH}` and `sent:{uid}:{YYYY-MM-DD}`
-  carry TTLs. If Redis is unreachable the limiter fails OPEN (allows the send and
-  logs) so local dev works without Redis.
+  correct across every worker and survive restarts. Two entry points, and the
+  difference matters:
+    * `check_rate_limit` — read-only, ADVISORY. Safe for a "can I send?" preflight,
+      but it cannot enforce: with multiple workers, two can both read 99/100 and
+      both send.
+    * `reserve_send_slot` — ENFORCING, and what `send_email` uses. Increments
+      first (atomic in Redis) and tests the resulting value, so only one racer
+      can cross the cap. Anything that then fails to put a message on the wire
+      calls `_release_send_slot` to give the slot back, so a blocked, bounced or
+      crashed attempt never burns quota.
+  Keys `sent:{uid}:{YYYY-MM-DD-HH}` and `sent:{uid}:{YYYY-MM-DD}` carry TTLs. If
+  Redis is unreachable the limiter fails OPEN (allows the send and logs) so local
+  dev works without Redis.
 - The **monthly quota** (usage_counters.emails_sent vs users.monthly_email_quota)
   is enforced inside `send_email`, not `check_rate_limit`, because it needs the DB
   session and the User row; `check_rate_limit`'s signature is intentionally
@@ -110,6 +117,20 @@ def _incr_send_counters(user_id) -> None:
         logger.warning("failed to increment redis send counters for %s: %s", user_id, exc)
 
 
+def _release_send_slot(user_id) -> None:
+    """Hand back a reserved slot when the send did not happen."""
+    client = _redis()
+    if client is None:
+        return
+    try:
+        pipe = client.pipeline()
+        pipe.decr(_hour_key(user_id))
+        pipe.decr(_day_key(user_id))
+        pipe.execute()
+    except Exception as exc:
+        logger.warning("failed to release redis send slot for %s: %s", user_id, exc)
+
+
 # --------------------------------------------------------------------------- limits
 
 
@@ -167,6 +188,58 @@ def check_rate_limit(user_id, settings_row: UserSettings) -> tuple[bool, str]:
     except Exception as exc:  # a mid-flight redis error must not block sending
         logger.warning("redis read failed during rate check for %s: %s", user_id, exc)
         return True, "redis error — limits skipped"
+
+    return True, "ok"
+
+
+def reserve_send_slot(user_id, settings_row: UserSettings) -> tuple[bool, str]:
+    """Atomically claim one send slot. This is the ENFORCING check.
+
+    `check_rate_limit` only reads, so with several workers two of them can both
+    see 99/100 and both send — the cap is exceeded by however many workers race.
+    Here the counter is INCREMENTed first (atomic in Redis) and the resulting
+    value is what's tested, so exactly one caller can be the one that crosses
+    the cap. A rejected or failed send calls `_release_send_slot` to hand the
+    slot back.
+
+    Fails OPEN when Redis is down, same as the read-only check: a dev machine
+    without Redis must still be able to send.
+    """
+    now = datetime.utcnow()
+    start = settings_row.send_start_hour if settings_row.send_start_hour is not None else 0
+    end = settings_row.send_end_hour if settings_row.send_end_hour is not None else 23
+    if not (start <= now.hour <= end):
+        return False, f"outside send window {start:02d}:00-{end:02d}:00 UTC (now {now.hour:02d}:00)"
+
+    client = _redis()
+    if client is None:
+        return True, "redis unavailable — limits skipped (dev mode)"
+
+    try:
+        hkey, dkey = _hour_key(user_id), _day_key(user_id)
+        pipe = client.pipeline()
+        pipe.incr(hkey)
+        pipe.expire(hkey, _HOUR_TTL_SECONDS)
+        pipe.incr(dkey)
+        pipe.expire(dkey, _DAY_TTL_SECONDS)
+        results = pipe.execute()
+        hourly, daily = int(results[0]), int(results[2])
+    except Exception as exc:
+        logger.warning("redis reserve failed for %s: %s", user_id, exc)
+        return True, "redis error — limits skipped"
+
+    # Counters now INCLUDE this send, so the comparison is > not >=.
+    max_hour = settings_row.max_emails_per_hour or 0
+    if max_hour and hourly > max_hour:
+        _release_send_slot(user_id)
+        return False, f"hourly cap reached ({hourly - 1}/{max_hour})"
+
+    cap = effective_daily_cap(settings_row)
+    if cap and daily > cap:
+        _release_send_slot(user_id)
+        warm = settings_row.warmup_enabled and cap == (settings_row.warmup_daily_cap or 0)
+        label = "warmup daily cap" if warm else "daily cap"
+        return False, f"{label} reached ({daily - 1}/{cap})"
 
     return True, "ok"
 
@@ -376,7 +449,9 @@ def send_email(
             db.commit()
             return {"status": "queued", "message_id": None, "reason": "monthly quota reached"}
 
-        allowed, reason = check_rate_limit(user.id, settings_row)
+        # Claims the slot atomically — see reserve_send_slot. Every path below
+        # that does NOT put a message on the wire must release it again.
+        allowed, reason = reserve_send_slot(user.id, settings_row)
         if not allowed:
             lead.status = LeadStatus.queued
             db.commit()
@@ -457,12 +532,17 @@ def send_email(
                 time.sleep(_BACKOFF_BASE_SECONDS ** attempt)
 
         # Retries exhausted — leave recoverable, mark failed for now.
+        _release_send_slot(user.id)  # nothing went out; don't burn the quota
         lead.status = LeadStatus.failed
         db.commit()
         return {"status": "failed", "message_id": None, "reason": last_reason}
 
     except Exception as exc:  # absolute backstop — never raise to the caller
         logger.exception("send_email crashed for lead %s", getattr(lead, "id", "?"))
+        try:
+            _release_send_slot(user.id)
+        except Exception:
+            pass
         try:
             db.rollback()
         except Exception:
@@ -509,7 +589,9 @@ def _handle_success(
     db.commit()
 
     _bump_emails_sent(db, user.id)
-    _incr_send_counters(user.id)
+    # NB: the Redis hourly/daily counters were already incremented by
+    # reserve_send_slot before the send. Incrementing again here would
+    # double-count every message and halve the effective cap.
 
     logger.info("sent email to %s (lead %s, step %d)", recipient, lead.id, sequence_step)
     return {"status": "sent", "message_id": message_id}
@@ -549,6 +631,10 @@ def _handle_bounce(
 
     # Hard bounce -> suppress so we never retry this address (PRD §7).
     _add_suppression(db, user.id, recipient, SuppressionReason.bounce)
+
+    # SendGrid refused the message, so nothing reached a mailbox — give the
+    # reserved slot back rather than burning a send from the daily cap.
+    _release_send_slot(user.id)
 
     logger.warning("bounced email to %s (lead %s): %s", recipient, lead.id, reason)
     return {"status": "bounced", "message_id": None, "reason": reason}

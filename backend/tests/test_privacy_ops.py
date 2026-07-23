@@ -249,6 +249,154 @@ def test_metrics_requires_auth():
     assert client.get("/api/metrics/summary").status_code == 401
 
 
+# --------------------------------------------------------- atomic send-slot reservation
+
+
+def test_reserve_send_slot_is_atomic_under_concurrency(monkeypatch):
+    """Concurrent reservations must never exceed the cap.
+
+    The old read-then-send flow let two workers both observe 99/100 and both
+    send. This drives the reserve path against a fake Redis whose INCR is
+    atomic, and asserts exactly `cap` reservations succeed out of many.
+    """
+    from services.email import sender
+
+    class FakeRedis:
+        """Minimal Redis with genuinely atomic INCR/DECR under a lock."""
+
+        def __init__(self):
+            import threading
+
+            self.store = {}
+            self.lock = threading.Lock()
+
+        def pipeline(self):
+            return FakePipe(self)
+
+    class FakePipe:
+        def __init__(self, r):
+            self.r = r
+            self.ops = []
+
+        def incr(self, key):
+            self.ops.append(("incr", key))
+            return self
+
+        def decr(self, key):
+            self.ops.append(("decr", key))
+            return self
+
+        def expire(self, key, ttl):
+            self.ops.append(("expire", key))
+            return self
+
+        def execute(self):
+            out = []
+            with self.r.lock:
+                for op, key in self.ops:
+                    if op == "incr":
+                        self.r.store[key] = self.r.store.get(key, 0) + 1
+                        out.append(self.r.store[key])
+                    elif op == "decr":
+                        self.r.store[key] = self.r.store.get(key, 0) - 1
+                        out.append(self.r.store[key])
+                    else:
+                        out.append(True)
+            return out
+
+    fake = FakeRedis()
+    monkeypatch.setattr(sender, "_redis", lambda: fake)
+
+    class Row:
+        max_emails_per_hour = 5
+        max_emails_per_day = 5
+        warmup_enabled = False
+        warmup_daily_cap = 0
+        send_start_hour = 0
+        send_end_hour = 23
+
+    uid = uuid.uuid4()
+    results = []
+
+    import threading
+
+    def attempt():
+        ok, _ = sender.reserve_send_slot(uid, Row())
+        results.append(ok)
+
+    threads = [threading.Thread(target=attempt) for _ in range(25)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    granted = sum(1 for ok in results if ok)
+    assert granted == 5, f"cap is 5 but {granted} sends were allowed"
+
+
+def test_release_send_slot_returns_quota():
+    """A reserved-but-unsent slot must be handed back, not burned."""
+    from services.email import sender
+
+    store = {}
+
+    class Pipe:
+        def __init__(self):
+            self.ops = []
+
+        def incr(self, k):
+            self.ops.append(("incr", k))
+            return self
+
+        def decr(self, k):
+            self.ops.append(("decr", k))
+            return self
+
+        def expire(self, k, ttl):
+            self.ops.append(("exp", k))
+            return self
+
+        def execute(self):
+            out = []
+            for op, k in self.ops:
+                if op == "incr":
+                    store[k] = store.get(k, 0) + 1
+                    out.append(store[k])
+                elif op == "decr":
+                    store[k] = store.get(k, 0) - 1
+                    out.append(store[k])
+                else:
+                    out.append(True)
+            return out
+
+    class R:
+        def pipeline(self):
+            return Pipe()
+
+    import pytest as _pytest
+
+    monkey = _pytest.MonkeyPatch()
+    monkey.setattr(sender, "_redis", lambda: R())
+    try:
+        class Row:
+            max_emails_per_hour = 10
+            max_emails_per_day = 10
+            warmup_enabled = False
+            warmup_daily_cap = 0
+            send_start_hour = 0
+            send_end_hour = 23
+
+        uid = uuid.uuid4()
+        ok, _ = sender.reserve_send_slot(uid, Row())
+        assert ok
+        after_reserve = dict(store)
+        sender._release_send_slot(uid)
+        # Every counter is back to its pre-reservation value.
+        assert all(store[k] == after_reserve[k] - 1 for k in after_reserve)
+    finally:
+        monkey.undo()
+
+
 # --------------------------------------------------------- 3.4 global handler -> Sentry
 
 
