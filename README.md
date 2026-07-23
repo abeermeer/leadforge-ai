@@ -9,7 +9,7 @@
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.110-009688?logo=fastapi&logoColor=white)
 ![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black)
 ![Celery](https://img.shields.io/badge/Celery-5.3-37814A?logo=celery&logoColor=white)
-![Tests](https://img.shields.io/badge/tests-39%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-50%20passing-brightgreen)
 ![Security](https://img.shields.io/badge/SSRF%20%7C%20cookie%20auth%20%7C%20webhook%20auth%20%7C%20GDPR-hardened-blue)
 
 </div>
@@ -166,7 +166,9 @@ docs/             PRD, build plan, system-design, demo video
 
 ## Status
 
-Phases 1–6 complete · 39/39 tests green · CI green (backend + frontend) · frontend builds clean · two production-readiness security audits closed · live-verified against real websites (agency brain, email finder, SEO/brand audit, AI email writing).
+Phases 1–6 complete · 50/50 tests green ([CI](https://github.com/abeermeer/leadforge-ai/actions/workflows/ci.yml)) · frontend builds clean · four production-readiness audits closed · live-verified against real websites (agency brain, email finder, SEO/brand audit, AI email writing).
+
+**Not yet done:** no live send has happened. Deliverability, real-world scraper failure rates, and cost-per-lead are unverified until the [live-fire runbook](docs/LIVE-FIRE-RUNBOOK.md) is executed.
 
 <div align="center">
 <sub>Built for the Trax9 agency. Proprietary.</sub>
